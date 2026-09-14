@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Arquitectura del Sistema IDS/IPS con ML",
+    "output": "architecture-ids-ips.html",
+    "quality_profile": "showcase",
+    "viewBox": [1200, 500],
+    "views": [
+      { "id": "main-flow", "label": "Flujo principal", "focus": ["network", "scapy", "flows", "catboost", "decision", "ips"], "note": "Captura → Análisis → Decisión → Respuesta" }
+    ]
+  },
+  "components": [
+    { "id": "network", "type": "external", "label": "Red UNIPAZ", "sublabel": "VLAN 802.1Q", "pos": [30, 200], "size": [120, 50] },
+    { "id": "scapy", "type": "backend", "label": "Scapy + Npcap", "sublabel": "Captura SPAN", "pos": [200, 200], "size": [120, 50] },
+    { "id": "flows", "type": "backend", "label": "FlowTracker", "sublabel": "23 features", "pos": [370, 120], "size": [120, 50] },
+    { "id": "heuristic", "type": "backend", "label": "Heurística", "sublabel": "7 detectores", "pos": [370, 320], "size": [120, 50] },
+    { "id": "catboost", "type": "backend", "label": "CatBoost v5", "sublabel": "7 clases", "pos": [560, 120], "size": [120, 50] },
+    { "id": "sqli", "type": "security", "label": "SQLiGuard", "sublabel": "SQLi binario", "pos": [560, 320], "size": [120, 50] },
+    { "id": "decision", "type": "security", "label": "Decisión", "sublabel": "≥ 0.85", "pos": [740, 220], "size": [120, 50] },
+    { "id": "ips", "type": "security", "label": "IPS", "sublabel": "Bloqueo", "pos": [910, 140], "size": [100, 50] },
+    { "id": "sqlite", "type": "database", "label": "SQLite", "sublabel": "Logs", "pos": [910, 300], "size": [100, 50] },
+    { "id": "mikrotik", "type": "external", "label": "MikroTik", "sublabel": "SSH", "pos": [1060, 140], "size": [100, 50] },
+    { "id": "telegram", "type": "messagebus", "label": "Telegram", "sublabel": "Alertas", "pos": [1060, 300], "size": [100, 50] }
+  ],
+  "connections": [
+    { "id": "c1", "from": "network", "to": "scapy", "label": "Paquetes", "variant": "emphasis" },
+    { "id": "c2", "from": "scapy", "to": "flows", "variant": "emphasis" },
+    { "id": "c3", "from": "scapy", "to": "heuristic", "variant": "dashed" },
+    { "id": "c4", "from": "flows", "to": "catboost", "label": "Features", "variant": "emphasis", "labelAt": [510, 116] },
+    { "id": "c5", "from": "catboost", "to": "decision", "label": "Predicción", "variant": "emphasis", "labelAt": [700, 184] },
+    { "id": "c6", "from": "heuristic", "to": "decision", "variant": "dashed", "toSide": "bottom", "via": [[550, 345], [550, 420], [800, 420], [800, 270]] },
+    { "id": "c7", "from": "catboost", "to": "sqli", "label": "SQLi?", "variant": "security", "labelAt": [620, 230] },
+    { "id": "c8", "from": "sqli", "to": "decision", "variant": "security" },
+    { "id": "c9", "from": "decision", "to": "ips", "label": "Bloquear", "variant": "security", "labelAt": [870, 176] },
+    { "id": "c10", "from": "decision", "to": "sqlite", "label": "Registrar", "variant": "dashed", "labelAt": [870, 284] },
+    { "id": "c11", "from": "ips", "to": "mikrotik", "label": "SSH", "variant": "security" },
+    { "id": "c12", "from": "decision", "to": "telegram", "label": "Alerta", "variant": "dashed", "labelAt": [930, 364] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Captura", "items": ["Scapy + Npcap en modo SPAN", "Flujos bidireccionales con 23 features", "Heurística con umbrales EWMA"] },
+    { "dot": "emerald", "title": "Clasificación", "items": ["CatBoost v5 multiclase (7 clases)", "SQLiGuard verifica Inyección SQL", "Umbral de confianza: 0.85"] },
+    { "dot": "rose", "title": "Respuesta", "items": ["Bloqueo vía SSH a MikroTik", "Registro en SQLite", "Alertas por Telegram"] }
+  ]
+}

@@ -5,6 +5,8 @@
 > combina **CIC-IDS2017 + CSE-CIC-IDS2018 + CIC-DDoS2019** y recupera los ataques web 2017
 > perdidos por el bug de encoding U+FFFD (ver [`../adr/0001-pipeline-datos-v5.md`](../adr/0001-pipeline-datos-v5.md)).
 > La escasez de SQLi aquí descrita se resolvió con el detector binario **SQLiGuard**.
+> Los scripts referenciados (`CEREBRO.py`, `limpiar_dataset.py`, `generar_dataset.py`) fueron
+> movidos a `scripts/legacy/` y ya no están en la raíz del repositorio.
 
 > **Fecha:** 2 de junio de 2026  
 > **Dataset en disco:** `c:\IDS-IPS\Proyecto-IPS-IDBS-ML\CSE-CIC-IDS2018\`  
@@ -39,7 +41,7 @@
                 →  84 columnas  (vs 80 en los demás)
 ```
 
-Este archivo es casi **4 veces más grande** que cualquier otro y tiene **4 columnas extras**. Si no se maneja correctamente, al concatenar con los demás se generarán columnas con `NaN` masivos o errores de parsing. `CEREBRO.py` ya maneja esto cargando solo `FEATURES_ESPERADAS` con `usecols`, lo que evita el problema — **pero hay que verificarlo**.
+Este archivo es casi **4 veces más grande** que cualquier otro y tiene **4 columnas extras**. Si no se maneja correctamente, al concatenar con los demás se generarán columnas con `NaN` masivos o errores de parsing. `CEREBRO.py` (ahora en `scripts/legacy/CEREBRO.py`) ya maneja esto cargando solo `FEATURES_ESPERADAS` con `usecols`, lo que evita el problema — **pero hay que verificarlo**.
 
 ### 🔴 Hallazgo 2 — SQL Injection críticamente escasa
 
@@ -129,7 +131,11 @@ El archivo de 200 MB del 28 de febrero contiene **100% tráfico benigno**. Es va
 
 ## 4. Plan de Corrección Antes de Entrenar
 
-### Paso 1 — Activar SMOTE en CEREBRO.py (obligatorio)
+### Paso 1 — Activar SMOTE en CEREBRO.py (obligatorio) [HISTÓRICO]
+
+> [!NOTE]
+> Esta sección describe correcciones al script `CEREBRO.py` original, ahora en `scripts/legacy/CEREBRO.py`.
+> El pipeline actual (`generador_dataset_global.py` + `CEREBRO_V5.py`) ya no requiere estas correcciones manuales.
 
 ```python
 # CEREBRO.py, línea 176 — Descomentar esto:
@@ -143,7 +149,7 @@ Sin SMOTE, el modelo aprenderá a ignorar `SQL Injection` porque representa 0.00
 
 ### Paso 2 — Aumentar muestra de SQL Injection (recomendado)
 
-En `CEREBRO.py`, cambiar la estrategia de sampling para NO reducir las clases minoritarias:
+En `CEREBRO.py` (histórico, en `scripts/legacy/`), cambiar la estrategia de sampling para NO reducir las clases minoritarias:
 
 ```python
 # Actual (reduce todo el tráfico Benign al 10%):
@@ -163,7 +169,7 @@ else:
 Ese archivo tiene 3.8 GB y casi el 100% es DDoS LOIC-HTTP. Para evitar que sesgue el modelo:
 
 ```python
-# En CEREBRO.py, después de cargar el chunk, limitar DDoS LOIC-HTTP:
+# En CEREBRO.py (histórico), después de cargar el chunk, limitar DDoS LOIC-HTTP:
 if 'DDoS attacks-LOIC-HTTP' in chunk['Label'].values:
     loic = chunk[chunk['Label'] == 'DDoS attacks-LOIC-HTTP']
     otros = chunk[chunk['Label'] != 'DDoS attacks-LOIC-HTTP']

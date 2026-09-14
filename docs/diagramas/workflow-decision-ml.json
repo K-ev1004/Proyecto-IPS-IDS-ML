@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Flujo de Decisión ML — v5 + SQLiGuard",
+    "output": "workflow-decision-ml.html",
+    "quality_profile": "showcase",
+    "viewBox": [1210, 660],
+    "views": [
+      { "id": "happy-path", "label": "Ruta de éxito", "focus": ["capture", "flow", "classify", "decide", "log", "block"], "note": "Desde la captura hasta el bloqueo exitoso." },
+      { "id": "sqli-check", "label": "Verificación SQLi", "focus": ["classify", "sqli-guard", "confirm-sqli", "reject-sqli"], "note": "El camino especial para Inyección SQL." }
+    ]
+  },
+  "lanes": [
+    { "id": "capture", "label": "Captura" },
+    { "id": "analysis", "label": "Análisis ML" },
+    { "id": "decision", "label": "Decisión" },
+    { "id": "response", "label": "Respuesta" }
+  ],
+  "phases": [
+    { "id": "ingest", "label": "Ingesta", "fromCol": 0, "toCol": 1 },
+    { "id": "classify", "label": "Clasificación", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "respond", "label": "Respuesta", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["capture", "flow", "classify", "decide", "log", "block"],
+  "nodes": [
+    { "id": "capture", "lane": "capture", "col": 0, "type": "external", "label": "Paquete Red", "sublabel": "TCP/UDP", "width": 120 },
+    { "id": "flow", "lane": "capture", "col": 1, "type": "backend", "label": "FlowTracker", "sublabel": "23 features", "width": 120 },
+    { "id": "classify", "lane": "analysis", "col": 2, "type": "backend", "label": "CatBoost v5", "sublabel": "7 clases", "width": 120 },
+    { "id": "sqli-guard", "lane": "analysis", "col": 3, "type": "security", "label": "SQLiGuard", "sublabel": "Binario SQLi", "width": 120 },
+    { "id": "decide", "lane": "decision", "col": 3, "type": "security", "label": "Decisión", "sublabel": "≥ 0.85", "width": 120 },
+    { "id": "low-conf", "lane": "decision", "col": 4, "type": "messagebus", "label": "Baja Conf.", "sublabel": "Heurística", "width": 120 },
+    { "id": "confirm-sqli", "lane": "analysis", "col": 4, "type": "security", "label": "SQLi OK", "sublabel": "P ≥ 0.30", "width": 120 },
+    { "id": "reject-sqli", "lane": "analysis", "col": 5, "type": "messagebus", "label": "SQLi No", "sublabel": "FP bajo", "width": 120 },
+    { "id": "log", "lane": "response", "col": 4, "type": "database", "label": "SQLite", "sublabel": "Registro", "width": 120 },
+    { "id": "block", "lane": "response", "col": 5, "type": "security", "label": "IPS Block", "sublabel": "MikroTik", "width": 120 }
+  ],
+  "edges": [
+    { "id": "e1", "from": "capture", "to": "flow", "variant": "emphasis", "role": "main" },
+    { "id": "e2", "from": "flow", "to": "classify", "label": "Flujo", "variant": "emphasis", "role": "main" },
+    { "id": "e3", "from": "classify", "to": "decide", "label": "Predicción", "variant": "emphasis", "role": "main" },
+    { "id": "e4", "from": "classify", "to": "sqli-guard", "label": "SQLi?", "variant": "security", "role": "branch" },
+    { "id": "e5", "from": "sqli-guard", "to": "confirm-sqli", "label": "Sí", "variant": "security", "role": "main" },
+    { "id": "e6", "from": "sqli-guard", "to": "reject-sqli", "label": "No", "variant": "dashed", "role": "error" },
+    { "id": "e7", "from": "confirm-sqli", "to": "log", "label": "SQLi", "variant": "security", "role": "main" },
+    { "id": "e8", "from": "decide", "to": "log", "label": "OK", "variant": "emphasis", "role": "main" },
+    { "id": "e9", "from": "decide", "to": "low-conf", "label": "< 0.85", "variant": "dashed", "role": "error" },
+    { "id": "e10", "from": "log", "to": "block", "label": "Crítico", "variant": "security", "role": "main" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Captura", "items": ["Scapy + Npcap en modo SPAN", "Flujos bidireccionales 23 features"] },
+    { "dot": "emerald", "title": "Clasificación", "items": ["CatBoost v5 predice 7 clases", "SQLiGuard verifica Inyección SQL", "Umbral unificado: 0.85"] },
+    { "dot": "rose", "title": "Respuesta", "items": ["Bloqueo vía SSH a MikroTik", "Registro en SQLite", "Alertas por Telegram"] }
+  ]
+}

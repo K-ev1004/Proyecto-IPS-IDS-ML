@@ -2,6 +2,8 @@
 
 > [!WARNING] Documento histórico
 > Registro de mejoras de una fase anterior (umbrales antiguos, modelo v3 91.9%).
+> Los scripts referenciados (`CEREBRO.py`, `generar_dataset.py`, `simular_varios_ataques.py`)
+> fueron movidos a `scripts/legacy/` y ya no están en la raíz del repositorio.
 > Para el estado actual del motor (v5 + SQLiGuard, umbral unificado 0.85) ver
 > [`../CHANGELOG.md`](../CHANGELOG.md) y [`../guias/`](../guias/).
 
@@ -46,10 +48,10 @@ Existía un error de diseño donde el IPS **se negaba a bloquear una IP** si la 
 ---
 
 ## 5. Entrenamiento del Modelo de Machine Learning (IA)
-El código en `CEREBRO.py` estaba preparado para usar un modelo de Ensamble (Random Forest + Redes Neuronales MLP + XGBoost), pero los archivos de entrenamiento (`.pkl`) no existían porque faltaba el dataset base.
+El código en `CEREBRO.py` (ahora en `scripts/legacy/CEREBRO.py`) estaba preparado para usar un modelo de Ensamble (Random Forest + Redes Neuronales MLP + XGBoost), pero los archivos de entrenamiento (`.pkl`) no existían porque faltaba el dataset base.
 * **Solución:** 
-  1. Creamos `generar_dataset.py`, un script que sintetizó un archivo CSV (`escanerpuertos.csv`) con **20,000 registros de tráfico de red realista**, compuesto por 60% tráfico interactivo normal y 40% de 6 diferentes ataques severos (incluyendo inyecciones SQL y UDP Floods).
-  2. Ejecutamos el pipeline de `CEREBRO.py` con herramientas profesionales de balanceo de clases (`SMOTE`).
+  1. Creamos `generar_dataset.py` (ahora en `scripts/legacy/`), un script que sintetizó un archivo CSV (`escanerpuertos.csv`) con **20,000 registros de tráfico de red realista**, compuesto por 60% tráfico interactivo normal y 40% de 6 diferentes ataques severos (incluyendo inyecciones SQL y UDP Floods).
+  2. Ejecutamos el pipeline de `CEREBRO.py` (histórico) con herramientas profesionales de balanceo de clases (`SMOTE`).
   3. **Resultado:** El modelo alcanzó un **Accuracy (Precisión) del 91.90%**. Los archivos de predicciones fueron generados, y ahora la tabla de "Tráfico en Vivo" muestra directamente las deducciones con confirmación en porcentajes: `(ML: 98.4%)`.
 
 ---
@@ -57,10 +59,7 @@ El código en `CEREBRO.py` estaba preparado para usar un modelo de Ensamble (Ran
 ## 6. Simulador Avanzado de Ataques Red (Pentesting)
 El script original de pruebas enviaba paquetes uno a uno usando la IP local de la computadora, lo cual era ignorado por el IDS (ya que el IDS descarta ataques cuyo origen es la máquina local para evitar bucles) y además era inyectado directamentente a Capa 3, haciéndolo invisible para el monitor de Windows.
 * **Solución:** 
-  - Se programó un nuevo script interactivo unificado: **`simular_varios_ataques.py`**.
+  - Se programó un nuevo script interactivo unificado: **`simular_varios_ataques.py`** (ahora en `scripts/legacy/`).
   - Este envía tramas en Capa 2 puras (Ethernet) con `sendp()`, lo que garantiza que Scapy capture los paquetes en sistemas Windows.
   - **4 Modos de ataque a elegir:** Port Scan, DDoS (Botnet de IPs), UDP Flood y Exploits (FTP/SSH/SMB).
   - Incluye **generación de IPs falsas** (IP Spoofing) aleatorias en cada ejecución. Esto arregló el "misterio" final donde la interfaz parecía dejar de bloquear ataques, cuando en realidad la IP hardcodeada ya estaba bloqueada (por ende, el IPS la ignoraba silenciosamente).
-
----
-*Hecho por Antigravity AI.*

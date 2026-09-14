@@ -3,6 +3,8 @@
 > [!WARNING] Documento histórico (v2/v3)
 > Este análisis corresponde al **estado del sistema hasta junio de 2026 (modelos v2/v3)**.
 > El modelo en producción actual es **CatBoost v5 + SQLiGuard** (v. infra).
+> El script `CEREBRO.py` original fue movido a `scripts/legacy/CEREBRO.py`; el entrenamiento actual usa `CEREBRO_V5.py`.
+> `pipeline_catboost_v3.pkl` ya no existe; el modelo activo es `pipeline_catboost_v5.pkl`.
 > Ver métricas actuales en [`../guias/entrenamiento.md`](../guias/entrenamiento.md) y decisiones en [`../adr/`](../adr/).
 
 > **Fecha del análisis:** 2 de junio de 2026  
@@ -33,8 +35,8 @@ Tráfico de Red (Scapy)
           SQLite + Telegram + IPS (MikroTik)
 ```
 
-**Modelo activo en producción:** `pipeline_catboost_v3.pkl` (CatBoost solo, ~7.2 MB)  
-**Modelo de referencia/evaluación:** Ensamble RF + XGB + CatBoost (`metricas_modelo_v2.json`)
+**Modelo activo en producción (actual):** `pipeline_catboost_v5.pkl` (CatBoost v5)  
+**Modelos históricos referenciados aquí:** `pipeline_catboost_v3.pkl` (v3, ya no existe) y ensamble RF+XGB+CatBoost (`metricas_modelo_v2.json`, ya no existe)  
 
 ---
 
@@ -49,8 +51,9 @@ Tráfico de Red (Scapy)
 
 > [!IMPORTANT]
 > Se usaron **dos datasets distintos** en diferentes versiones del pipeline:  
-> - `limpiar_dataset.py` usa **CIC-IDS2017** → genera el ensamble v2  
-> - `CEREBRO.py` usa **CSE-CIC-IDS2018** → genera el pipeline v3 (el que está en producción)
+> - `limpiar_dataset.py` (ahora en `scripts/legacy/`) usa **CIC-IDS2017** → genera el ensamble v2  
+> - `CEREBRO.py` (ahora en `scripts/legacy/CEREBRO.py`) usa **CSE-CIC-IDS2018** → genera el pipeline v3
+> - El pipeline actual (`generador_dataset_global.py`) combina **CIC-IDS2017 + CSE-CIC-IDS2018 + CIC-DDoS2019** → genera el pipeline v5
 >
 > Esto crea **una inconsistencia de features** entre el modelo evaluado y el modelo en producción.
 
@@ -141,7 +144,7 @@ VotingClassifier(
 | max_depth=20 (RF) | ⚠️ Puede generar overfitting en RF — muy profundo |
 | Validación cruzada | ✅ 3-fold (rápido) sobre 100K muestras estratificadas |
 
-### 3.2 Modelo v3 en Producción (CEREBRO.py)
+### 3.2 Modelo v3 Histórico (scripts/legacy/CEREBRO.py)
 
 ```python
 ImbPipeline([
@@ -281,8 +284,8 @@ Ataque detectado
 | # | Problema | Impacto | Archivo |
 |---|---------|---------|---------|
 | 1 | **Feature mismatch v2 vs v3** | Ensamble v2 inutilizable en producción | `flujos_red.py` vs `selected_features.pkl` |
-| 2 | **Sin métricas del modelo v3** | No hay evidencia de rendimiento del modelo real en producción | `CEREBRO.py` |
-| 3 | **SMOTE desactivado en v3** | Desbalanceo no corregido para clases pequeñas en modelo productivo | `CEREBRO.py` line 176 |
+| 2 | **Sin métricas del modelo v3** | No hay evidencia de rendimiento del modelo v3 (histórico) | `scripts/legacy/CEREBRO.py` |
+| 3 | **SMOTE desactivado en v3** | Desbalanceo no corregido para clases pequeñas en modelo v3 (histórico) | `scripts/legacy/CEREBRO.py` línea 176 |
 | 4 | **RF max_depth=20** | Riesgo de overfitting severo en RandomForest | `entrenar_rapido.py` |
 
 ### 7.2 Moderados

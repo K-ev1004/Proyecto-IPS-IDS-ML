@@ -156,7 +156,7 @@ flowchart TD
 │   ├── red/                     # Arquitectura de red UNIPAZ
 │   ├── tesis/                   # Capítulos y anteproyecto (académico)
 │   └── CHANGELOG.md             # Historial de cambios del sistema
-└── LICENSE                      # (pendiente de definir licencia)
+└── (LICENSE)                    # Pendiente de definir licencia
 ```
 
 ## 📚 Documentación

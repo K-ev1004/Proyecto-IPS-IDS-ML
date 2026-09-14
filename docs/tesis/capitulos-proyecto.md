@@ -6,9 +6,9 @@
 
 La transformación digital en las instituciones educativas ha traído consigo un aumento significativo en la superficie de ataque cibernético. Las universidades, por su naturaleza abierta y su alta densidad de dispositivos conectados, se han convertido en blancos frecuentes de ciberataques como escaneo de puertos, ataques de denegación de servicio (DoS/DDoS), inyecciones SQL y explotación de vulnerabilidades. Según el informe de amenazas cibernéticas de Educause (2024), el sector educativo es uno de los más atacados a nivel global, solo superado por el sector salud y el gubernamental.
 
-La Universidad Popular del Cesar (UNIPAZ), ubicada en Valledupar, Colombia, cuenta con una población estudiantil de aproximadamente 2,915 estudiantes distribuidos en tres bloques principales (Aulas, Biblioteca y Salones Externos), con una concurrencia simultánea de entre 1,100 y 1,750 dispositivos en horas pico. Su infraestructura de red está segmentada por VLANs y utiliza equipos como firewalls Sophos XGS 3300, routers MikroTik CCR, switches Raisecom y TP-Link Omada, y puntos de acceso UniFi/Ruckus. Sin embargo, la institución carece de un sistema de detección y prevención de intrusiones (IDS/IPS) dedicado que analice el tráfico interno más allá del firewall perimetral.
+El Instituto Universitario de la Paz (UNIPAZ), ubicado en Barrancabermeja, Santander, Colombia, cuenta con una población estudiantil de aproximadamente 2,915 estudiantes distribuidos en tres bloques principales (Aulas, Biblioteca y Salones Externos), con una concurrencia simultánea de entre 1,100 y 1,750 dispositivos en horas pico. Su infraestructura de red está segmentada por VLANs y utiliza equipos como firewalls Sophos XGS 3300, routers MikroTik CCR, switches Raisecom y TP-Link Omada, y puntos de acceso UniFi/Ruckus. Sin embargo, la institución carece de un sistema de detección y prevención de intrusiones (IDS/IPS) dedicado que analice el tráfico interno más allá del firewall perimetral.
 
-El presente proyecto propone el desarrollo e implementación de un Sistema de Detección y Prevención de Intrusiones basado en Machine Learning (IDBS-IPS-ML), diseñado específicamente para operar en el entorno de red de UNIPAZ. El sistema integra captura de tráfico en tiempo real mediante Scapy con Npcap, detección heurística de seis tipos de ataques (SYN Flood, DDoS Distribuido, Port Scanner, Posible Exploit, Inyección SQL y UDP Flood), clasificación mediante un modelo CatBoost con precisión del 91.9%, un módulo de respuesta activa (IPS) que bloquea IPs maliciosas vía firewall de Windows y MikroTik RouterOS, y un panel de control SOC (Security Operations Center) en tiempo real con interfaz PyQt5 Fluent Design.
+El presente proyecto propone el desarrollo e implementación de un Sistema de Detección y Prevención de Intrusiones basado en Machine Learning (IDBS-IPS-ML), diseñado específicamente para operar en el entorno de red de UNIPAZ. El sistema integra captura de tráfico en tiempo real mediante Scapy con Npcap, detección heurística de siete tipos de ataques (SYN Flood, DDoS Distribuido, Port Scanner, Posible Exploit, Inyección SQL, UDP Flood y tráfico Normal), clasificación mediante un modelo CatBoost v5 con precisión del 86.41%, un módulo de respuesta activa (IPS) que bloquea IPs maliciosas vía firewall de Windows y MikroTik RouterOS, y un panel de control SOC (Security Operations Center) en tiempo real con interfaz PyQt5 Fluent Design.
 
 ---
 
@@ -25,9 +25,9 @@ Sistema híbrido de Detección y Prevención de Intrusiones (IDS/IPS) de red bas
 | Componente | Descripción | Tecnología |
 |---|---|---|
 | Motor de Captura | Captura pasiva de paquetes mediante port mirroring (SPAN) | Scapy + Npcap |
-| Analizador Heurístico | Detección por reglas de umbrales para 6 tipos de ataque | Python puro con contadores por IP |
-| Motor de Flujos | Agrupación de paquetes en flujos bidireccionales con extracción de 22 características CIC-IDS2018 | `flujos_red.py` |
-| Clasificador ML | Modelo de clasificación de tráfico en 7 categorías | CatBoost (91.9% accuracy) |
+| Analizador Heurístico | Detección por reglas de umbrales para 7 tipos de ataque | Python puro con contadores por IP |
+| Motor de Flujos | Agrupación de paquetes en flujos bidireccionales con extracción de 23 características CIC-IDS2018 | `flujos_red.py` |
+| Clasificador ML | Modelo de clasificación de tráfico en 7 categorías | CatBoost v5 (86.41% accuracy) |
 | Módulo IPS | Bloqueo activo de IPs maliciosas | Firewall de Windows (netsh/PowerShell) + SSH a MikroTik RouterOS |
 | Panel de Control | Dashboard SOC en tiempo real con 4 pestañas | PyQt5 + qfluentwidgets + Matplotlib |
 | Sistema de Alertas | Notificaciones push de ataques detectados | Telegram Bot API |
@@ -36,9 +36,9 @@ Sistema híbrido de Detección y Prevención de Intrusiones (IDS/IPS) de red bas
 ### 2.4 Funcionalidades Principales
 
 1. **Captura de tráfico en tiempo real**: Monitoreo continuo de la interfaz de red seleccionada, capturando paquetes TCP, UDP e ICMP.
-2. **Detección heurística multicapa**: Seis detectores independientes con umbrales configurables que identifican patrones de ataque inmediatamente.
+2. **Detección heurística multicapa**: Siete detectores independientes con umbrales configurables que identifican patrones de ataque inmediatamente.
 3. **Clasificación inteligente por Machine Learning**: El modelo CatBoost analiza flujos de tráfico y clasifica cada uno en una de 7 categorías (Normal, SYN Flood, DDoS Distribuido, Port Scanner, Posible Exploit, Inyección SQL, UDP Flood).
-4. **Lógica de decisión híbrida**: Combinación inteligente de heuristicas y ML — si el ML tiene alta confianza (≥70%), su veredicto prevalece; si no, las reglas heurísticas toman el control para garantizar la detección.
+4. **Lógica de decisión híbrida**: Combinación inteligente de heuristicas y ML — si el ML tiene alta confianza (≥0.85), su veredicto prevalece; si no, las reglas heurísticas toman el control para garantizar la detección.
 5. **Bloqueo activo de IPs**: Ejecución automática de reglas de bloqueo en el firewall de Windows y envío de comandos SSH al router MikroTik para añadir IPs a la lista negra.
 6. **Dashboard SOC interactivo**: Visualización en tiempo real de eventos, tráfico, estadísticas avanzadas y controles IPS con temporizadores de desbloqueo.
 7. **Alertas por Telegram**: Notificaciones instantáneas al personal de seguridad cuando se detecta un ataque crítico.
@@ -197,11 +197,11 @@ El backlog prioriza las actividades restantes y completadas del proyecto, organi
 |---|---|---|---|
 | ML-01 | Generación de dataset sintético (20,000 registros) | Alta | ✅ Completado |
 | ML-02 | Limpieza y balanceo con SMOTE | Alta | ✅ Completado |
-| ML-03 | Selección de características (SelectKBest, 22 features) | Alta | ✅ Completado |
-| ML-04 | Entrenamiento de CatBoost v3 | Alta | ✅ Completado |
-| ML-05 | Evaluación del modelo (91.9% accuracy) | Alta | ✅ Completado |
+| ML-03 | Selección de características (SelectKBest, 23 features) | Alta | ✅ Completado |
+| ML-04 | Entrenamiento de CatBoost v5 | Alta | ✅ Completado |
+| ML-05 | Evaluación del modelo (86.41% accuracy) | Alta | ✅ Completado |
 | ML-06 | Integración del modelo predictivo en flujo en vivo | Alta | ✅ Completado |
-| ML-07 | Lógica de decisión híbrida (ML ≥70% / heurística) | Alta | ✅ Completado |
+| ML-07 | Lógica de decisión híbrida (ML ≥0.85 / heurística) | Alta | ✅ Completado |
 
 #### MÓDULO 4: IPS - BLOQUEO ACTIVO (EN PROCESO)
 | ID | Actividad | Prioridad | Estado |
@@ -287,12 +287,12 @@ Las siguientes actividades del módulo IPS están actualmente en proceso de fina
 
 #### IPS-05: Lista Blanca de IPs Críticas
 - **Descripción**: Implementar una lista blanca configurable de IPs de servidores críticos (sistema de notas, matrículas, aulas virtuales, bases de datos administrativas) que nunca deben ser bloqueadas por el IPS, incluso si generan tráfico sospechoso.
-- **Archivo afectado**: `respuesta_activa.py`
+- **Archivo afectado**: `ids.py`, `mikrotik_api.py`
 - **Criterio de aceptación**: Las IPs en whitelist son ignoradas por el módulo de bloqueo; cualquier intento de bloqueo se registra en log pero no se ejecuta.
 
 #### IPS-06: Bloqueo Selectivo por VLAN
 - **Descripción**: Implementar lógica que identifique la VLAN de origen del tráfico malicioso (mediante el tag 802.1Q) y determine si el bloqueo debe ser automático o requiere autorización manual, basado en la procedencia (externo vs interno).
-- **Archivo afectado**: `ids.py`, `respuesta_activa.py`
+- **Archivo afectado**: `ids.py`, `mikrotik_api.py`
 - **Criterio de aceptación**: El sistema distingue tráfico de VLANs externas (bloqueo automático) vs internas (alerta sin bloqueo automático).
 
 #### IPS-07: Modo Híbrido Autónomo/Semi-autónomo

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Pipeline de Datos ETL — IDS/IPS",
+    "output": "dataflow-pipeline-datos.html",
+    "quality_profile": "showcase",
+    "viewBox": [1100, 500]
+  },
+  "stages": [
+    { "label": "Ingesta" },
+    { "label": "Limpieza" },
+    { "label": "Features" },
+    { "label": "Entrenamiento" }
+  ],
+  "nodes": [
+    { "id": "cic2017", "type": "external", "label": "CIC-IDS2017", "stage": 0, "row": 0 },
+    { "id": "cic2018", "type": "external", "label": "CIC-IDS2018", "stage": 0, "row": 1 },
+    { "id": "custom", "type": "security", "label": "UNIPAZ", "stage": 0, "row": 2 },
+    { "id": "global", "type": "backend", "label": "Global 2017+2018", "stage": 1, "row": 0 },
+    { "id": "clean", "type": "backend", "label": "Clean 23 feat", "stage": 1, "row": 1 },
+    { "id": "smote", "type": "backend", "label": "SMOTE", "stage": 2, "row": 0 },
+    { "id": "model", "type": "backend", "label": "CatBoost v5", "stage": 2, "row": 1 },
+    { "id": "sqli-train", "type": "security", "label": "Train SQLi", "stage": 3, "row": 0 },
+    { "id": "sqli-model", "type": "security", "label": "SQLiGuard", "stage": 3, "row": 1 }
+  ],
+  "flows": [
+    { "from": "cic2017", "to": "global", "label": "CSVs CIC-IDS2017", "variant": "default", "labelAt": [208, 130] },
+    { "from": "cic2018", "to": "global", "label": "CSVs CSE-CIC-IDS2018", "variant": "default", "labelAt": [208, 230] },
+    { "from": "global", "to": "clean", "label": "Consolidación", "variant": "emphasis", "labelAt": [315, 200] },
+    { "from": "clean", "to": "smote", "label": "Balanceo", "variant": "dashed", "labelAt": [490, 200] },
+    { "from": "smote", "to": "model", "label": "Train", "variant": "emphasis", "labelAt": [530, 215] },
+    { "from": "model", "to": "sqli-train", "label": "23 features", "variant": "default", "labelAt": [680, 200] },
+    { "from": "sqli-train", "to": "sqli-model", "label": "SQLi", "variant": "security", "labelAt": [745, 200] },
+    { "from": "custom", "to": "clean", "label": "UNIPAZ", "variant": "security", "labelAt": [208, 330] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Ingesta", "items": ["CIC-IDS2017 (2.8M)", "CIC-IDS2018 (16M)", "UNIPAZ (captura local)"] },
+    { "dot": "emerald", "title": "Procesamiento", "items": ["Consolidación global", "23 features CIC", "SMOTE balanceo"] },
+    { "dot": "rose", "title": "Modelos", "items": ["CatBoost v5 (7 clases)", "SQLiGuard (binario)", "Umbral 0.85"] }
+  ]
+}

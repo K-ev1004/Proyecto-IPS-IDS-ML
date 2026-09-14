@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Secuencia de Detección de Ataque",
+    "output": "sequence-deteccion-paquete.html",
+    "viewBox": [850, 600],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "views": [
+      { "id": "detection-path", "label": "Detección", "focus": ["network", "scapy", "flows", "catboost", "sqli"], "note": "Paquete → Clasificación ML." },
+      { "id": "response-path", "label": "Respuesta", "focus": ["catboost", "ips", "sqlite"], "note": "Decisión → Bloqueo." }
+    ]
+  },
+  "participants": [
+    { "id": "network", "type": "external", "label": "Red", "sublabel": "VLAN" },
+    { "id": "scapy", "type": "backend", "label": "Scapy", "sublabel": "Npcap" },
+    { "id": "flows", "type": "backend", "label": "FlowTracker", "sublabel": "23 feat" },
+    { "id": "catboost", "type": "backend", "label": "CatBoost v5", "sublabel": "7 clases" },
+    { "id": "sqli", "type": "security", "label": "SQLiGuard", "sublabel": "SQLi" },
+    { "id": "ips", "type": "security", "label": "IPS", "sublabel": "Bloqueo" },
+    { "id": "sqlite", "type": "database", "label": "SQLite", "sublabel": "Log" }
+  ],
+  "segments": [
+    { "from": 130, "to": 220, "label": "Captura" },
+    { "from": 250, "to": 340, "label": "Clasificación" },
+    { "from": 360, "to": 510, "label": "Respuesta" }
+  ],
+  "messages": [
+    { "id": "m1", "from": "network", "to": "scapy", "y": 160, "label": "Paquete TCP SYN", "variant": "emphasis" },
+    { "id": "m2", "from": "scapy", "to": "flows", "y": 190, "label": "Extraer paquete", "variant": "default" },
+    { "id": "m3", "from": "flows", "to": "catboost", "y": 240, "label": "23 features CIC", "variant": "emphasis" },
+    { "id": "m4", "from": "catboost", "to": "sqli", "y": 290, "label": "¿Clase = SQLi?", "variant": "security" },
+    { "id": "m5", "from": "sqli", "to": "catboost", "y": 330, "label": "No → clase original", "variant": "return" },
+    { "id": "m6", "from": "catboost", "to": "ips", "y": 390, "label": "SYN_Flood conf=0.92", "variant": "emphasis" },
+    { "id": "m7", "from": "ips", "to": "sqlite", "y": 430, "label": "INSERT INTO ataques", "variant": "dashed" },
+    { "id": "m8", "from": "sqlite", "to": "ips", "y": 470, "label": "OK", "variant": "return" },
+    { "id": "m9", "from": "ips", "to": "network", "y": 505, "label": "IP bloqueada", "variant": "security" }
+  ],
+  "activations": [
+    { "participant": "scapy", "from": 145, "to": 195, "type": "backend" },
+    { "participant": "flows", "from": 185, "to": 245, "type": "backend" },
+    { "participant": "catboost", "from": 235, "to": 395, "type": "backend" },
+    { "participant": "sqli", "from": 285, "to": 335, "type": "security" },
+    { "participant": "ips", "from": 385, "to": 510, "type": "security" },
+    { "participant": "sqlite", "from": 425, "to": 475, "type": "database" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Captura", "items": ["Scapy captura vía Npcap SPAN", "FlowTracker agrupa flujos 5s"] },
+    { "dot": "emerald", "title": "Clasificación", "items": ["CatBoost v5 predice 7 clases", "SQLiGuard verifica Inyección SQL", "Confianza ≥ 0.85"] },
+    { "dot": "rose", "title": "Respuesta", "items": ["IPS bloquea vía SSH MikroTik", "Registro en SQLite", "Alerta asíncrona Telegram"] }
+  ]
+}
