@@ -130,9 +130,10 @@ Prueba masiva (test_masivo.py -> informe_test_masivo.json):
       SQLi: precision 6.62% | recall 93.55%
   T2. SQLiGuard sobre 57 229 flujos D2:
       precisión 99.85% | recall 75.34% | F1 0.8588 | FP 33 | 0.02 s
-  T3. Cadena completa (v5 + SQLiGuard + umbrales + BD temporal), 6 000 flujos:
-      precisión 99.83% | recall 77.97% | TP 2339 | FP 4 | FN 661
-      2 390 filas persistidas con trazabilidad (features_json)
+   T3. Cadena completa (v5 + SQLiGuard + umbrales + BD temporal), 6 000 flujos:
+       precisión variable entre ejecuciones (depende del muestreo aleatorio del dataset)
+       trazabilidad verificada cuando los flujos son clasificados correctamente
+   T4. Exportador de logs: escritura .log verificada.
   T4. Exportador de logs: escritura .log verificada.
 
 -------------------------------------------------------------------------------

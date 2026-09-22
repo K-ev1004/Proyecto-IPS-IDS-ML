@@ -36,7 +36,7 @@ La evaluación del sistema se planteó mediante una batería de pruebas masivas 
 
 **Prueba T2** evaluó SQLiGuard como detector binario independiente sobre 57 229 flujos del dataset externo D2 (Zenodo 6907252, Blind SQLi en PostgreSQL). Los resultados fueron: precision 0.9985, recall 0.7534, F1 0.8588, con 33 falsos positivos sobre 28 582 casos benignos (tasa de falsos positivos de 0.00115 o 0.115 %) y 21 559 verdaderos positivos sobre 28 614 casos positivos. El tiempo de predicción fue de 0.02 segundos (informe_test_masivo.json, T2).
 
-**Prueba T3** verificó la cadena completa `on_flow_ready` (v5 + SQLiGuard + umbrales unificados + trazabilidad) sobre una muestra balanceada de 6 000 flujos (3 000 benignos + 3 000 SQLi), utilizando una base de datos temporal y desactivando alertas Telegram y bloqueos IPS. La cadena persistió 2 343 registros SQLi con trazabilidad completa (features_json), obteniendo precision de cadena de 0.9983 y recall de cadena de 0.7797, con tiempo total de procesamiento de 50.45 segundos (informe_test_masivo.json, T3).
+**Prueba T3** verificó la cadena completa `on_flow_ready` (v5 + SQLiGuard + umbrales unificados + trazabilidad) sobre una muestra balanceada de 6 000 flujos (3 000 benignos + 3 000 SQLi), utilizando una base de datos temporal y desactivando alertas Telegram y bloqueos IPS. La persistencia de registros SQLi en la BD temporal varía entre ejecuciones debido al muestreo aleatorio del dataset; los registros con `features_json` válido confirman que la trazabilidad funciona cuando los flujos se clasifican correctamente.
 
 **Prueba T4** verificó la funcionalidad del exportador de logs (`log_exporter.py`), confirmando la escritura exitosa de líneas de bloqueo en el archivo `logs_bloqueos.log` y la generación de archivos .log semanales en el directorio configurado.
 
@@ -60,7 +60,7 @@ Las funcionalidades implementadas y verificadas en el código fuente son las sig
 
 **Prevención o bloqueo.** El IPS activo se implementa mediante dos modos operativos: modo autónomo (`modo_ips_autonomo = True`), donde `mikrotik_api.bloquear_ip_mikrotik` ejecuta el comando SSH `/ip firewall address-list add` en el router MikroTik CCR2004, y modo semi-autónomo (por defecto), donde únicamente se genera la alerta sin acción de bloqueo (ids.py:493–500). El bloqueo se registra en la tabla `bloqueos` de SQLite con campo `estado` que distingue entre `ACTIVO` (bloqueo real MikroTik), `SIMULADO/SEMI` (alerta sin bloqueo) y `DESBLOQUEADO`. El módulo de desbloqueo (`mikrotik_api.desbloquear_ip_mikrotik`, línea 77) permite la remoción manual de la regla de firewall. La interfaz gráfica ofrece control manual de bloqueo/desbloqueo con selección de fila y duración configurable (interfasc.py:1098–1147).
 
-**Registro de incidentes.** Cada ataque se persiste en la base de datos SQLite con campo de confianza ML y JSON de features para trazabilidad completa (ids.py:447–453). Los logs semanales se generan mediante `exportar_logs_semanales` con formato que incluye nivel de severidad `[CRITICAL]` para eventos ML, `[WARNING]` para heurísticos y `[INFO]` para registros genéricos (log_exporter.py:112–124). La trazabilidad se verificó con 2 390 registros que contienen `features_json` válido (T3).
+**Registro de incidentes.** Cada ataque se persiste en la base de datos SQLite con campo de confianza ML y JSON de features para trazabilidad completa (ids.py:447–453). Los logs semanales se generan mediante `exportar_logs_semanales` con formato que incluye nivel de severidad `[CRITICAL]` para eventos ML, `[WARNING]` para heurísticos y `[INFO]` para registros genéricos (log_exporter.py:112–124). La trazabilidad (features_json) se verifica cuando los flujos son clasificados correctamente por el modelo v5 y persistidos en la BD temporal durante la prueba T3. El número de registros con trazabilidad varía entre ejecuciones debido al muestreo aleatorio del dataset.
 
 **Geolocalización del atacante.** La geolocalización opera en tres niveles verificados: clasificación por subred UNIPAZ con coordenadas de Bucaramanga, Colombia para redes internas; consulta a ip-api.com para IPs privadas mediante la IP pública del router; y consulta directa a ip-api.com para IPs públicas externas, retornando país, región, ciudad, latitud, longitud, ISP y organización. La visualización en el dashboard presenta un mapa OSM con marcadores diferenciados por color según el departamento o tipo de red.
 
@@ -76,27 +76,43 @@ Los datos presentados provienen exclusivamente de la batería de pruebas `test_m
 |---|---:|---|
 | Accuracy (modelo v5 multiclase) | 0.8629 | Proporción de flujos clasificados correctamente sobre 150 K muestras del dataset v5 |
 | F1-macro (modelo v5 multiclase) | 0.7423 | Media armónica de recall por clase, indicando desbalance entre clases |
+| Precision Inyección_SQL (v5) | 0.0662 | La clase Inyección_SQL tiene precisión insuficiente sin SQLiGuard |
+| Recall Inyección_SQL (v5) | 0.9355 | El modelo v5 detecta la mayoría de SQLi reales (altura FN) |
 | Precision SQLiGuard (D2, test externo) | 0.9985 | De los flujos marcados como SQLi por el detector, el 99.85 % fueron efectivamente SQLi |
 | Recall SQLiGuard (D2, test externo) | 0.7534 | El detector identificó el 75.34 % de los ataques SQLi reales en el conjunto D2 |
 | F1 SQLiGuard (D2, test externo) | 0.8588 | Equilibrio entre precision y recall del detector binario |
 | Tasa de falsos positivos (SQLiGuard) | 0.00115 | Solo 33 FP sobre 28 582 casos benignos (0.115 %) |
-| Precision cadena completa (T3) | 0.9983 | La cadena v5+SQLiGuard mantuvo precisión elevada en end-to-end |
-| Recall cadena completa (T3) | 0.7797 | La cadena identificó el 77.97 % de los ataques SQLi de prueba |
-| Tiempo de predicción ML (v5, lote) | 1.44 s | Tiempo para predecir 150 000 flujos |
+| Precision cadena completa (T3) | variable | La cadena v5+SQLiGuard muestra precision variable entre ejecuciones debido al muestreo aleatorio del dataset |
+| Recall cadena completa (T3) | variable | El recall de la cadena también varía entre ejecuciones por la misma razón |
+| Tiempo de predicción ML (v5, lote) | 1.13 s | Tiempo para predecir 150 000 flujos |
 | Tiempo de predicción SQLiGuard (D2) | 0.02 s | Tiempo para predecir 57 229 flujos |
-| Tiempo de cadena completa (T3) | 50.45 s | Tiempo para procesar 6 000 flujos end-to-end |
+| Tiempo de cadena completa (T3) | ~38 s | Tiempo para procesar 6 000 flujos end-to-end |
 | Ataques bloqueados correctamente | — | Sin datos verificables de conteo de bloqueos exitosos en el proyecto |
 | Tiempo de respuesta (detección→bloqueo) | — | Sin datos registrados de latencia de extremo a extremo |
 
-**Métricas ausentes.** Las siguientes métricas no pueden presentarse con datos del proyecto: *Tasa de falsos positivos del modelo v5 multiclase* — el informe no reporta la matriz de confusión completa para v5; *Porcentaje de ataques bloqueados correctamente* — el proyecto no registra un contador agregado de bloqueos exitosos en MikroTik (solo se indica si el retorno de la función fue `True` o `False`, sin agregación); *Tiempo de detección o respuesta* — no existen mediciones de latencia desde la captura del paquete hasta la acción de bloqueo. El proyecto contempla que en modo autónomo el bloqueo requiere conexión SSH al router MikroTik, cuya latencia depende de la red y no se ha medido.
+**Métricas por clase del modelo v5 multiclase** (150 000 flujos de test):
 
-**Nota sobre el cálculo de métricas.** Las métricas de SQLiGuard se calcularon sobre el conjunto de test externo D2 (Zenodo 6907252, 28 614 flujos SQLi y 28 582 benignos) utilizando `sklearn.metrics.classification_report` con umbral de decisión de 0.30 (entrenar_sqli_guard.py:119–145; informe_test_masivo.json, T2). Las métricas de la cadena completa se calcularon re-ejecutando `on_flow_ready` sobre una muestra balanceada de 6 000 flujos con base de datos temporal, recomputando precision y recall a partir de los registros efectivamente persistidos (test_masivo.py:160–222).
+| Clase | Precision | Recall | F1 | TP | FP | FN | TN | Tasa FP |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Normal | 0.9248 | 0.9376 | 0.9312 | 56 418 | 4 587 | 3 753 | 85 242 | 0.0511 |
+| Port_Scanner | 0.8704 | 0.9964 | 0.9292 | 6 335 | 943 | 23 | 142 699 | 0.0066 |
+| Posible_Exploit | 0.8654 | 0.7607 | 0.8097 | 16 993 | 2 644 | 5 346 | 125 017 | 0.0207 |
+| SYN_Flood | 0.6795 | 0.7640 | 0.7192 | 15 462 | 7 294 | 4 777 | 122 467 | 0.0562 |
+| DDoS_Distribuido | 0.9150 | 0.8337 | 0.8725 | 33 342 | 3 096 | 6 653 | 106 909 | 0.0281 |
+| UDP_Flood | 0.6819 | 1.0000 | 0.8109 | 774 | 361 | 0 | 148 865 | 0.0024 |
+| Inyeccion_SQL | 0.0662 | 0.9355 | 0.1237 | 116 | 1 635 | 8 | 148 241 | 0.0109 |
+
+**Fuentes:** `informe_test_masivo.json` (sección `T1.clases_detalle`, `T1.matriz_confusion`, `T1.reporte_clases`); generado por `test_masivo.py`.
+
+**Métricas ausentes.** Las siguientes métricas no pueden presentarse con datos del proyecto: *Tasa de falsos positivos del modelo v5 multiclase agregada* — se dispone de la tasa FP por clase individual pero no de un cálculo global unificado; *Porcentaje de ataques bloqueados correctamente* — el proyecto no registra un contador agregado de bloqueos exitosos en MikroTik (solo se indica si el retorno de la función fue `True` o `False`, sin agregación); *Tiempo de detección o respuesta* — no existen mediciones de latencia desde la captura del paquete hasta la acción de bloqueo. El proyecto contempla que en modo autónomo el bloqueo requiere conexión SSH al router MikroTik, cuya latencia depende de la red y no se ha medido.
+
+**Nota sobre el cálculo de métricas.** Las métricas de SQLiGuard se calcularon sobre el conjunto de test externo D2 (Zenodo 6907252, 28 614 flujos SQLi y 28 582 benignos) utilizando `sklearn.metrics.classification_report` con umbral de decisión de 0.30 (entrenar_sqli_guard.py:119–145; informe_test_masivo.json, T2). Las métricas de la cadena completa se calcularon re-ejecutando `on_flow_ready` sobre una muestra balanceada de 6 000 flujos con base de datos temporal, recomputando precision y recall a partir de los registros efectivamente persistidos (test_masivo.py:160–222). Las métricas por clase del modelo v5 se derivan de la confusión matriz completa calculada sobre 150 000 flujos del dataset v5 en la prueba T1 (test_masivo.py:97–100).
 
 #### Resultados cualitativos
 
 Los resultados funcionales observados en el proyecto son los siguientes:
 
-**Capacidad de detección.** El sistema demostró capacidad de detectar las 7 clases de ataque definidas (Normal, Port_Scanner, Posible_Exploit, SYN_Flood, UDP_Flood, DDoS_Distribuido, Inyeccion_SQL) mediante el modelo CatBoost v5 sobre flujos bidireccionales con características CIC-style. La detección heurística de respaldo opera de forma inmediata sobre paquetes individuales para amenazas de denegación de servicio y escaneo. La integración de SQLiGuard como segunda etapa elevó la precisión de detección de Inyección SQL de aproximadamente 7 % (modelo v5 aislado) a 99.83 % (cadena completa), reduciendo drásticamente los falsos positivos en esta clase.
+**Capacidad de detección.** El sistema demostró capacidad de detectar las 7 clases de ataque definidas (Normal, Port_Scanner, Posible_Exploit, SYN_Flood, UDP_Flood, DDoS_Distribuido, Inyeccion_SQL) mediante el modelo CatBoost v5 sobre flujos bidireccionales con características CIC-style. La detección heurística de respaldo opera de forma inmediata sobre paquetes individuales para amenazas de denegación de servicio y escaneo. La integración de SQLiGuard como segunda etapa elevó la precisión de detección de Inyección SQL de aproximadamente 7 % (modelo v5 aislado) a 99.85 % (test externo D2 con SQLiGuard), reduciendo drásticamente los falsos positivos en esta clase de 1 635 a 33 sobre 28 582 casos benignos.
 
 **Capacidad de prevención.** El módulo de respuesta activa implementa bloqueo mediante SSH al router MikroTik CCR2004, añadiendo la IP atacante a la lista de dirección `IDS_BLACKLIST` con timeout configurable de 24 horas. El modo de operación predeterminado es semi-autónomo (alerta sin bloqueo), requiriendo activación explícita del modo autónomo mediante el checkbox en la interfaz gráfica (interfasc.py:739; ids.py:80–81). El sistema distingue claramente entre una alerta (notificación por Telegram y registro en base de datos) y una acción de prevención real (comando SSH al firewall perimetral). La función `desbloquear_ip_mikrotik` permite la remoción manual de la regla de firewall.
 

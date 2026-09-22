@@ -158,11 +158,11 @@ Los valores reportados a continuación provienen de los registros de prueba y va
 | **Recall (SQLiGuard - Test D2)** | **0.7534** (75.34 %) | Sensibilidad de detección frente a inyecciones SQL ciegas (*Blind*) no vistas en entrenamiento. |
 | **F1-Score (SQLiGuard - Test D2)** | **0.8588** | Balance armónico del detector de segunda etapa en ambiente de prueba externo. |
 | **Tasa de Falsos Positivos sobre Benignos (SQLiGuard)** | **0.00115** (0.115 %) | Solo 33 falsos positivos registrados sobre 28,615 flujos benignos de prueba ($FP / [FP + TN]$). |
-| **Precision Cadena Integrada (T3)** | **0.9983** (99.83 %) | Verificada en lote de 6,000 flujos procesando la tubería completa `on_flow_ready` ($TP=2,339, FP=4$). |
-| **Recall Cadena Integrada (T3)** | **0.7797** (77.97 %) | Detección global efectiva de la cadena integrada en lote de 6,000 flujos ($FN=661$). |
-| **Tiempo de Inferencia Algorítmica (v5)** | **9.60 µs / flujo** | 1.44 segundos acumulados para clasificar 150,000 flujos en GPU (`informe_test_masivo.json:T1`). |
-| **Tiempo de Predicción (SQLiGuard)** | **0.35 µs / flujo** | 0.02 segundos acumulados para evaluar 57,229 flujos en GPU (`informe_test_masivo.json:T2`). |
-| **Tiempo de Procesamiento Cadena Completa** | **8.41 ms / flujo** | 50.45 segundos para 6,000 flujos incluyendo pipeline, inferencia y persistencia SQLite (`T3`). |
+| **Precision Cadena Integrada (T3)** | **variable** entre ejecuciones | Verificada en lote de 6,000 flujos procesando la tubería completa `on_flow_ready`. La precision varía debido al muestreo aleatorio del dataset en cada ejecución. |
+| **Recall Cadena Integrada (T3)** | **variable** entre ejecuciones | La detección global efectiva de la cadena varía entre ejecuciones por la misma razón de muestreo aleatorio. |
+| **Tiempo de Inferencia Algorítmica (v5)** | **~7.5 µs / flujo** | 1.13 segundos acumulados para clasificar 150,000 flujos (`informe_test_masivo.json:T1`). |
+| **Tiempo de Predicción (SQLiGuard)** | **~0.35 µs / flujo** | 0.02 segundos acumulados para evaluar 57,229 flujos (`informe_test_masivo.json:T2`). |
+| **Tiempo de Procesamiento Cadena Completa** | **~6.4 ms / flujo** | ~38 segundos para 6,000 flujos incluyendo pipeline, inferencia y persistencia SQLite (`T3`). |
 
 #### Métricas no calculables por carencia de datos de campo
 * **Porcentaje de ataques bloqueados correctamente en tráfico real**: En el código existe la función de mitigación activa (`mikrotik_api.bloquear_ip_mikrotik`), pero no se encuentran registros en el repositorio con pruebas de penetración o tráfico de ataque inyectado en vivo sobre el campus físico para tabular la tasa de efectividad de bloqueo en tiempo real.

@@ -85,17 +85,45 @@ try:
     f1m = f1_score(y_true, y_pred, average='macro')
     reporte = classification_report(y_true, y_pred, target_names=ids.tipo_ataque_encoder.classes_,
                                     zero_division=0, output_dict=True)
+    cm = confusion_matrix(y_true, y_pred)
+    n_clases = len(ids.tipo_ataque_encoder.classes_)
+
+    # Métricas por clase individual (precision, recall, F1, FP, FN, TN, tasa_FP)
+    clases_detalle = {}
+    for i in range(n_clases):
+        tp = cm[i, i]
+        fp = cm[:, i].sum() - tp
+        fn = cm[i, :].sum() - tp
+        tn = cm.sum() - tp - fp - fn
+        precision = cm[i, i] / (cm[i, i] + fp) if (cm[i, i] + fp) > 0 else 0.0
+        recall = cm[i, i] / (cm[i, i] + fn) if (cm[i, i] + fn) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        tasa_fp = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+        clase_nombre = ids.tipo_ataque_encoder.classes_[i]
+        clases_detalle[clase_nombre] = {
+            'precision': round(float(precision), 4),
+            'recall': round(float(recall), 4),
+            'f1': round(float(f1), 4),
+            'tp': int(tp),
+            'fp': int(fp),
+            'fn': int(fn),
+            'tn': int(tn),
+            'tasa_falsos_positivos': round(float(tasa_fp), 5),
+        }
+
     RESULTADOS['T1'] = {
         'total_flujos': len(X),
         'accuracy': round(acc, 4),
         'f1_macro': round(f1m, 4),
         'tiempo_pred_s': round(t_pred, 2),
-        'clases': len(ids.tipo_ataque_encoder.classes_),
+        'clases': n_clases,
+        'clases_detalle': clases_detalle,
+        'matriz_confusion': cm.tolist(),
+        'reporte_clases': reporte,
     }
     # Precisión/recall de Inyeccion_SQL según el modelo v5 (referencia)
     idx_sql = int(ids.tipo_ataque_encoder.transform(['Inyeccion_SQL'])[0])
-    cm = confusion_matrix(y_true, y_pred)
-    neg_classes = [i for i in range(len(cm)) if i != idx_sql]
+    neg_classes = [i for i in range(n_clases) if i != idx_sql]
     tp_sql = cm[idx_sql, idx_sql]
     fp_sql = sum(cm[i, idx_sql] for i in neg_classes)
     fn_sql = sum(cm[idx_sql, j] for j in neg_classes)
@@ -106,6 +134,7 @@ try:
     print(f"      flujos={len(X)}  acc={acc:.4f}  f1_macro={f1m:.4f}  "
           f"pred={t_pred:.2f}s")
     print(f"      v5 SQLi -> precision={prec_sql5:.4f} recall={rec_sql5:.4f}")
+    print(f"      Métricas por clase guardadas en clases_detalle")
 except Exception as e:
     import traceback; traceback.print_exc()
     RESULTADOS['T1'] = {'error': str(e)}

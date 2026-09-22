@@ -3,8 +3,202 @@
     "total_flujos": 150000,
     "accuracy": 0.8629,
     "f1_macro": 0.7423,
-    "tiempo_pred_s": 1.44,
+    "tiempo_pred_s": 1.13,
     "clases": 7,
+    "clases_detalle": {
+      "DDoS_Distribuido": {
+        "precision": 0.915,
+        "recall": 0.8337,
+        "f1": 0.8725,
+        "tp": 33342,
+        "fp": 3096,
+        "fn": 6653,
+        "tn": 106909,
+        "tasa_falsos_positivos": 0.02814
+      },
+      "Inyeccion_SQL": {
+        "precision": 0.0662,
+        "recall": 0.9355,
+        "f1": 0.1237,
+        "tp": 116,
+        "fp": 1635,
+        "fn": 8,
+        "tn": 148241,
+        "tasa_falsos_positivos": 0.01091
+      },
+      "Normal": {
+        "precision": 0.9248,
+        "recall": 0.9376,
+        "f1": 0.9312,
+        "tp": 56418,
+        "fp": 4587,
+        "fn": 3753,
+        "tn": 85242,
+        "tasa_falsos_positivos": 0.05106
+      },
+      "Port_Scanner": {
+        "precision": 0.8704,
+        "recall": 0.9964,
+        "f1": 0.9292,
+        "tp": 6335,
+        "fp": 943,
+        "fn": 23,
+        "tn": 142699,
+        "tasa_falsos_positivos": 0.00656
+      },
+      "Posible_Exploit": {
+        "precision": 0.8654,
+        "recall": 0.7607,
+        "f1": 0.8097,
+        "tp": 16993,
+        "fp": 2644,
+        "fn": 5346,
+        "tn": 125017,
+        "tasa_falsos_positivos": 0.02071
+      },
+      "SYN_Flood": {
+        "precision": 0.6795,
+        "recall": 0.764,
+        "f1": 0.7192,
+        "tp": 15462,
+        "fp": 7294,
+        "fn": 4777,
+        "tn": 122467,
+        "tasa_falsos_positivos": 0.05621
+      },
+      "UDP_Flood": {
+        "precision": 0.6819,
+        "recall": 1.0,
+        "f1": 0.8109,
+        "tp": 774,
+        "fp": 361,
+        "fn": 0,
+        "tn": 148865,
+        "tasa_falsos_positivos": 0.00242
+      }
+    },
+    "matriz_confusion": [
+      [
+        33342,
+        657,
+        24,
+        9,
+        0,
+        5659,
+        304
+      ],
+      [
+        1,
+        116,
+        3,
+        0,
+        0,
+        4,
+        0
+      ],
+      [
+        310,
+        666,
+        56418,
+        931,
+        974,
+        816,
+        56
+      ],
+      [
+        0,
+        1,
+        13,
+        6335,
+        1,
+        8,
+        0
+      ],
+      [
+        4,
+        29,
+        4505,
+        1,
+        16993,
+        807,
+        0
+      ],
+      [
+        2781,
+        282,
+        42,
+        2,
+        1669,
+        15462,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        774
+      ]
+    ],
+    "reporte_clases": {
+      "DDoS_Distribuido": {
+        "precision": 0.9150337559690433,
+        "recall": 0.833654206775847,
+        "f1-score": 0.8724503813797705,
+        "support": 39995.0
+      },
+      "Inyeccion_SQL": {
+        "precision": 0.06624785836664764,
+        "recall": 0.9354838709677419,
+        "f1-score": 0.12373333333333333,
+        "support": 124.0
+      },
+      "Normal": {
+        "precision": 0.9248094418490288,
+        "recall": 0.9376277608814878,
+        "f1-score": 0.9311744899980194,
+        "support": 60171.0
+      },
+      "Port_Scanner": {
+        "precision": 0.8704314372080242,
+        "recall": 0.9963825102233407,
+        "f1-score": 0.9291581108829569,
+        "support": 6358.0
+      },
+      "Posible_Exploit": {
+        "precision": 0.8653562153078372,
+        "recall": 0.7606875867317248,
+        "f1-score": 0.8096531351248333,
+        "support": 22339.0
+      },
+      "SYN_Flood": {
+        "precision": 0.6794691509931446,
+        "recall": 0.7639705519047384,
+        "f1-score": 0.719246424002791,
+        "support": 20239.0
+      },
+      "UDP_Flood": {
+        "precision": 0.6819383259911894,
+        "recall": 1.0,
+        "f1-score": 0.8108957569408067,
+        "support": 774.0
+      },
+      "accuracy": 0.8629333333333333,
+      "macro avg": {
+        "precision": 0.7147551693835592,
+        "recall": 0.8896866410692686,
+        "f1-score": 0.7423302330946445,
+        "support": 150000.0
+      },
+      "weighted avg": {
+        "precision": 0.8759779380847673,
+        "recall": 0.8629333333333333,
+        "f1-score": 0.8674505768006683,
+        "support": 150000.0
+      }
+    },
     "sql_prec_v5": 0.0662,
     "sql_rec_v5": 0.9355
   },
@@ -18,24 +212,30 @@
     "fn": 7055,
     "tp": 21559,
     "tasa_fp_benigno": 0.00115,
-    "tiempo_pred_s": 0.02,
+    "tiempo_pred_s": 0.03,
     "umbral": 0.3
   },
   "T3": {
     "flujos_procesados": 6000,
-    "sql_persistidos": 2343,
-    "con_trazabilidad_features_json": 2390,
-    "tiempo_cadena_s": 50.45,
-    "filas_en_bd_tmp": 2390,
-    "precision_cadena": 0.9983,
-    "recall_cadena": 0.7797,
-    "tp": 2339,
-    "fp": 4,
-    "fn": 661
+    "sql_persistidos": 0,
+    "con_trazabilidad_features_json": 0,
+    "tiempo_cadena_s": 39.88,
+    "filas_en_bd_tmp": 0,
+    "precision_cadena": 0,
+    "recall_cadena": 0.0,
+    "tp": 0,
+    "fp": 0,
+    "fn": 3000
   },
   "T4": {
     "archivos_log": [
       "logsciberseguridad 2026-07-28 al 2026-08-04.log",
+      "logsciberseguridad 2026-08-24 al 2026-08-31.log",
+      "logsciberseguridad 2026-08-25 al 2026-09-01.log",
+      "logsciberseguridad 2026-08-26 al 2026-09-02.log",
+      "logsciberseguridad 2026-08-28 al 2026-09-04.log",
+      "logsciberseguridad 2026-08-30 al 2026-09-06.log",
+      "logsciberseguridad 2026-09-01 al 2026-09-08.log",
       "logs_bloqueos.log"
     ],
     "linea_bloqueo_escrita": true,
