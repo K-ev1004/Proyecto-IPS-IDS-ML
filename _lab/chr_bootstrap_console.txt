@@ -1,0 +1,48 @@
+============================================================
+ PRIMERA CONSOLA DEL CHR (bootstrap manual, UNA sola vez)
+============================================================
+Pre-requisito: provision_chr.ps1 ejecutado y VM iniciada:
+    VBoxManage startvm CHR-IDS-LAB
+(Abra la ventana grafica de la VM en VirtualBox: la consola
+ RouterOS aparece con 'Login:' si es CHR arrancado directo.)
+
+1. Login:   admin           (CHR por defecto: admin, SIN contrasena)
+   - Si pide reset de config: escriba 'n' (no resetear) o acepte segun
+     version. Al primer login se acepta la licencia (enter).
+
+2. Cambiar la contrasena de admin y crear el usuario 'ids':
+      /user set admin password=<ELEGIR_CLAVE_LAB>
+      /user add name=ids group=full password=<ELEGIR_CLAVE_LAB>
+
+   (REEMPLAZE <ELEGIR_CLAVE_LAB> por una clave del laboratorio y anotela en
+    config/mikrotik_lab.json - gitignored. Nunca use claves de produccion.)
+
+3. Habilitar SSH solo para la red de gestion (wan del lab):
+      /ip service set ssh disabled=no address=10.10.0.0/24
+      /ip ssh set strong-crypto=yes
+
+4. Probar desde la MAQUINA (host): 
+      ssh ids@10.10.0.2
+   Debe pedir la contrasena y abrir consola RouterOS '>'.
+
+5. Si desde el host no llega, revise firewall/ARP de Windows y que la VM
+   este en la red wan (ether1). Verificar:  /interface print  y  /ip address print
+
+---------------------------------------------
+ CONFIGURACION AUTOMATICA (IPs + firewall)
+---------------------------------------------
+Con SSH funcionando, NO hace falta tocar mas la consola. Ejecute en la
+maquina objetivo (host):
+
+      python .\chr_apply_config.py
+
+Esto aplicara via SSH: IPs 10.10.0.2/24 (ether1) y 10.10.1.2/24 (ether2),
+nombre CHR-IDS-LAB, y las reglas de firewall:
+
+    /ip firewall filter add chain=forward action=drop src-address-list=IDS_BLACKLIST comment=IDS_BLACKLIST_DROP_FORWARD place-before=0
+    /ip firewall filter add chain=input    action=drop src-address-list=IDS_BLACKLIST comment=IDS_BLACKLIST_DROP_INPUT    place-before=0
+
+NOTA (verificada): agregar una IP a un address-list NO bloquea nada por
+si solo; el drop del firewall es lo que separa al atacante. La prueba T5
+verifica ese drop (forward) con ping diferencial.
+============================================================

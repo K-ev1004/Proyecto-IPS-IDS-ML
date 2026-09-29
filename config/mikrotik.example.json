@@ -1,0 +1,8 @@
+{
+  "comentario": "Plantilla EJEMPLO (no versiones credenciales reales). Copia este archivo a mikrotik_lab.json o mikrotik_prod.json y completa los valores.",
+  "ip": "192.168.1.1",
+  "user": "USUARIO_SSH",
+  "pass": "CLAVE_REDES",
+  "port": 22,
+  "address_list": "IDS_BLACKLIST"
+}

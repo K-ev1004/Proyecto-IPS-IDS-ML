@@ -29,6 +29,12 @@ import pandas as pd
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
+# P1: aislar los logs de PRODUCCIÓN. log_exporter respeta la variable de
+# entorno LOG_FOLDER; el test escribe en una carpeta temporal y no ensucia
+# logs_ciberseguridad/. Debe definirse ANTES de importar ids (importa
+# log_exporter en su cabecera).
+os.environ['LOG_FOLDER'] = tempfile.mkdtemp(prefix='ids_logs_test_')
+
 print("=" * 70)
 print(" TEST MASIVO — SUBSISTEMA ML IDS/IPS (UNIPAZ)")
 print("=" * 70)
@@ -195,11 +201,7 @@ try:
     ids.ruta_bd = tmp_db
     ids.conn = sqlite3.connect(tmp_db, check_same_thread=False)
     ids.cursor = ids.conn.cursor()
-    ids.cursor.execute('''CREATE TABLE IF NOT EXISTS ataques (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, tipo_ataque TEXT,
-        ip_src TEXT, protocolo TEXT, puerto INTEGER,
-        confianza_ml REAL DEFAULT 0.0, features_json TEXT)''')
-    ids.conn.commit()
+    ids.crear_tabla_ataques(ids.conn)   # esquema ÚNICO compartido con producción
     ids._enviar_alerta_async = lambda msg: None   # no spamear Telegram
     ids.ips_activo = False
 
@@ -232,6 +234,7 @@ try:
         'flujos_procesados': len(lote),
         'sql_persistidos': n_sqli_persistidos,
         'con_trazabilidad_features_json': con_trazabilidad,
+        'sql_guard_confirmados': n_guard_conf,
         'tiempo_cadena_s': round(t_cadena, 2),
         'filas_en_bd_tmp': len(rows),
     }
@@ -259,12 +262,13 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 print("\n[T4] Exportador de logs (log_exporter)...")
 try:
-    from log_exporter import registrar_bloqueo_log
+    from log_exporter import registrar_bloqueo_log, obtener_carpeta_logs
     ip_prueba = "203.0.113.199"
     registrar_bloqueo_log(ip_prueba, "BLOQUEO_TEST_MASIVO", 24)
     # Verificar que existe un log .log reciente con la linea
-    # registrar_bloqueo_log escribe en logs_ciberseguridad/logs_bloqueos.log
-    logs_dir = os.path.join(BASE_DIR, "logs_ciberseguridad")
+    # registrar_bloqueo_log escribe en la carpeta activa (LOG_FOLDER), que en
+    # este test es una carpeta TEMPORAL para no contaminar producción.
+    logs_dir = obtener_carpeta_logs()
     ruta_bloqueos = os.path.join(logs_dir, "logs_bloqueos.log")
     encontrado = False
     if os.path.exists(ruta_bloqueos):
@@ -275,8 +279,10 @@ try:
         'archivos_log': archivos,
         'linea_bloqueo_escrita': encontrado,
         'ruta_bloqueos': ruta_bloqueos,
+        'carpeta_logs_temp': logs_dir,
     }
     print(f"      archivos .log: {len(archivos)} | linea test en logs_bloqueos.log: {encontrado}")
+    print(f"      carpeta logs (temporal): {logs_dir}")
 except Exception as e:
     import traceback; traceback.print_exc()
     RESULTADOS['T4'] = {'error': str(e)}
@@ -298,4 +304,57 @@ out = os.path.join(BASE_DIR, "informe_test_masivo.json")
 with open(out, 'w', encoding='utf-8') as f:
     json.dump(RESULTADOS, f, ensure_ascii=False, indent=2)
 print(f"\n  Informe guardado: {out}")
+
+# ---------------------------------------------------------------------------
+# Gates de aprobación P1: PASS/FAIL por prueba + exit code (validación CI)
+# ---------------------------------------------------------------------------
+def _gate(nombre, ok, detalle):
+    RESULTADOS.setdefault('gates', {})[nombre] = {'pass': bool(ok), 'detalle': detalle}
+    return bool(ok)
+
+def _t1_ok():
+    d = RESULTADOS.get('T1', {})
+    if 'error' in d:
+        return False
+    return d.get('accuracy', 0) >= 0.80 and d.get('f1_macro', 0) >= 0.70
+
+def _t2_ok():
+    d = RESULTADOS.get('T2', {})
+    if 'error' in d:
+        return False
+    fp_rate = d.get('tasa_fp_benigno', 1.0)
+    return d.get('precision', 0) >= 0.99 and fp_rate <= 0.0020
+
+def _t3_ok():
+    d = RESULTADOS.get('T3', {})
+    if 'error' in d:
+        return False
+    return d.get('sql_persistidos', 0) >= 1500 and d.get('precision_cadena', 0) >= 0.95
+
+def _t4_ok():
+    d = RESULTADOS.get('T4', {})
+    return bool(d.get('linea_bloqueo_escrita', False))
+
+resultados_gates = [
+    ('T1', _t1_ok(), f"acc>={RESULTADOS.get('T1', {}).get('accuracy', 0):.4f} "
+                     f"f1_macro>={RESULTADOS.get('T1', {}).get('f1_macro', 0):.4f}"),
+    ('T2', _t2_ok(), f"prec>={RESULTADOS.get('T2', {}).get('precision', 0):.4f} "
+                     f"fp_rate>={RESULTADOS.get('T2', {}).get('tasa_fp_benigno', 1):.4%}"),
+    ('T3', _t3_ok(), f"sql_persistidos>={RESULTADOS.get('T3', {}).get('sql_persistidos', 0)} "
+                     f"prec_cadena>={RESULTADOS.get('T3', {}).get('precision_cadena', 0):.4f}"),
+    ('T4', _t4_ok(), f"linea_bloqueo_escrita={RESULTADOS.get('T4', {}).get('linea_bloqueo_escrita', False)}"),
+]
+
+print("\n" + "=" * 70)
+print(" GATES DE APROBACIÓN (P1)")
+print("=" * 70)
+algun_fallo = False
+for nombre, ok, detalle in resultados_gates:
+    ok = _gate(nombre, ok, detalle)
+    algun_fallo = algun_fallo or not ok
+    print(f"  {nombre}: {'PASS' if ok else 'FAIL'}  ({detalle})")
+if algun_fallo:
+    print(f"\n[FAIL] Al menos un gate falló. Código de salida: 1")
+    sys.exit(1)
+print("\n[PASS] Todos los gates de aprobación superados.")
 print("\n[FIN] Tests masivos ejecutados.")

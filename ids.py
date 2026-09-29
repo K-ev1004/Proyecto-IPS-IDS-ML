@@ -78,7 +78,11 @@ comunicador = ComunicadorIDS()
 # =============================================================================
 sniffing_activo = False
 ips_activo = False
-modo_ips_autonomo = False # True = Bloquea, False = Semi-Autónomo (alerta)
+
+# P1/P2: modo autónomo de bloqueo. Se activa en el LAB sin tocar el código:
+#   IDS_IPS_AUTONOMO=1  (env)  ->  True = Bloquea via MikroTik
+#   default: False (Semi-Autónomo, solo alerta)
+modo_ips_autonomo = os.environ.get('IDS_IPS_AUTONOMO', '0') == '1'
 sniffer: AsyncSniffer = None
 
 # --- UMBRALES BASE DE DETECCIÓN ---
@@ -268,11 +272,11 @@ def _features_sqli_guard(features_dict):
 # =============================================================================
 # BASE DE DATOS SQLite
 # =============================================================================
-ruta_bd = os.path.join(BASE_DIR, 'intrusiones.db')
-conn   = sqlite3.connect(ruta_bd, check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute('''
+# Esquema ÚNICO de la tabla `ataques` — columna de verdad compartida por
+# producción y por las pruebas T3. Antes, T3 creaba una tabla reducida (sin
+# ip_dst/vlan_id/ttl/packet_size) y el INSERT de guardar_ataque (11 columnas)
+# fallaba SILENCIOSAMENTE -> la cadena persistía 0 ataques.
+ESQUEMA_ATAQUES = '''
     CREATE TABLE IF NOT EXISTS ataques (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp  TEXT,
@@ -280,10 +284,27 @@ cursor.execute('''
         ip_src     TEXT,
         protocolo  TEXT,
         puerto     INTEGER,
+        ip_dst     TEXT DEFAULT 'DESCONOCIDA',
         confianza_ml REAL DEFAULT 0.0,
-        features_json TEXT
+        features_json TEXT,
+        vlan_id    INTEGER DEFAULT 0,
+        ttl        INTEGER DEFAULT 0,
+        packet_size INTEGER DEFAULT 0
     )
-''')
+'''
+
+def crear_tabla_ataques(conn):
+    """Asegura la tabla `ataques` con el esquema completo (idempotente)."""
+    cur = conn.cursor()
+    cur.execute(ESQUEMA_ATAQUES)
+    conn.commit()
+    return cur
+
+ruta_bd = os.path.join(BASE_DIR, 'intrusiones.db')
+conn   = sqlite3.connect(ruta_bd, check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute(ESQUEMA_ATAQUES)
 
 # ALTER para bases SQLite ya existentes (compatible si ya existen las columnas)
 try:
@@ -318,9 +339,23 @@ cursor.execute('''
         ip_src     TEXT,
         tipo_ataque TEXT,
         duracion   INTEGER,
-        estado     TEXT
+        estado     TEXT,
+        comando    TEXT,
+        respuesta  TEXT,
+        confirmado INTEGER DEFAULT 0
     )
 ''')
+
+# Compatibilidad con BD legacy (columnas de confirmación de bloqueo)
+for columna, ddl in [
+    ('comando',    "ALTER TABLE bloqueos ADD COLUMN comando TEXT"),
+    ('respuesta',  "ALTER TABLE bloqueos ADD COLUMN respuesta TEXT"),
+    ('confirmado', "ALTER TABLE bloqueos ADD COLUMN confirmado INTEGER DEFAULT 0"),
+]:
+    try:
+        cursor.execute(ddl)
+    except sqlite3.OperationalError:
+        pass
 conn.commit()
 
 
@@ -384,7 +419,27 @@ def on_flow_ready(ip_src, ip_dst, features_dict):
                            ip_dst, flag="SQLiGuard", es_ml_puro=True, confianza_ml=confianza_ml,
                            features_json=json.dumps(_features_sqli_guard(features_dict)))
         elif tipo_str != 'Normal':
-            if confianza_v5 >= UMBRAL_ML:
+            # Endurecimiento SQL (P1): si v5 predice Inyeccion_SQL PERO SQLiGuard
+            # no la confirma, NUNCA se persiste como SQLi. Se re-mapea a la
+            # siguiente clase más probable de v5 (excluyendo SQLi) y se registra
+            # el caso descartado en la métrica sql_no_confirmados.
+            if tipo_str == 'Inyeccion_SQL':
+                metricas_trafico['sql_no_confirmados'] = metricas_trafico.get('sql_no_confirmados', 0) + 1
+                order = np.argsort(probs)[::-1]
+                top_idx = next((int(i) for i in order if int(i) != int(pred_idx)),
+                               int(order[0]))
+                tipo_remapeado = tipo_ataque_encoder.inverse_transform([top_idx])[0]
+                confianza_remap = float(probs[top_idx])
+                if tipo_remapeado != 'Normal' and confianza_remap >= UMBRAL_ML:
+                    metricas_trafico['detecciones_ataque'] += 1
+                    guardar_ataque(ip_src, tipo_remapeado, "TCP/UDP",
+                                   features_dict.get('Dst Port', 0), ip_dst,
+                                   flag="REMAP-SQLi", es_ml_puro=True,
+                                   confianza_ml=confianza_remap,
+                                   features_json=json.dumps(_features_sqli_guard(features_dict)))
+                else:
+                    metricas_trafico['detecciones_normal'] += 1
+            elif confianza_v5 >= UMBRAL_ML:
                 metricas_trafico['detecciones_ataque'] += 1
                 guardar_ataque(ip_src, tipo_str, "TCP/UDP", features_dict.get('Dst Port', 0),
                                ip_dst, flag="N/A", es_ml_puro=True, confianza_ml=confianza_v5,
@@ -453,7 +508,7 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
               confianza_ml, features_json, vlan_id, ttl, packet_size))
         conn.commit()
     except Exception as e:
-        pass
+        print(f"[!] ERROR persistiendo ataque en BD: {e}")
 
     # Emitir señal Qt (tupla extendida: 10 elementos)
     evento = [timestamp, ip_src, ip_dst, puerto, protocolo, flag, tipo_final,
@@ -488,31 +543,62 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
             print(f"ALERT [IPS] Criterios de bloqueo cumplidos para {ip_src} | Tipo: {tipo_ataque} | Severidad: {severidad_ips}")
 
             duracion = 24 # 24 horas por defecto en MikroTik
-            bloqueo_real = False
-            
+            resultado_bloqueo = None
+            comando = ''
+            respuesta = ''
+            confirmado = 0
+
             if modo_ips_autonomo:
                 try:
-                    # Intento de bloqueo vía MikroTik Core
-                    bloqueo_real = mikrotik_api.bloquear_ip_mikrotik(ip_src, duracion_horas=duracion)
+                    # Intento de bloqueo vía MikroTik Core (con readback de confirmación)
+                    resultado_bloqueo = mikrotik_api.bloquear_ip_mikrotik(ip_src, duracion_horas=duracion)
                 except Exception as e:
                     print(f"[!] Bloqueo MikroTik fallido: {e}")
+                    resultado_bloqueo = {'ok': False, 'modo': 'error', 'confirmado': False,
+                                         'comando': '', 'respuesta': str(e), 'error': str(e)}
             else:
                 print(f"[*] Modo Semi-Autónomo activo. Bloqueo de {ip_src} omitido (Solo Alerta).")
 
-            estado_bd = 'ACTIVO' if bloqueo_real else 'SIMULADO/SEMI'
+            if isinstance(resultado_bloqueo, dict):
+                ok_bloqueo = resultado_bloqueo.get('ok', False)
+                modo = resultado_bloqueo.get('modo', 'error')
+                confirmado = 1 if resultado_bloqueo.get('confirmado', False) else 0
+                comando = resultado_bloqueo.get('comando', '')
+                respuesta = resultado_bloqueo.get('respuesta', '')
+                if confirmado:
+                    estado_bd = 'CONFIRMADO'
+                elif modo == 'mock':
+                    estado_bd = 'SIMULADO'
+                elif ok_bloqueo:
+                    estado_bd = 'ACTIVO'
+                else:
+                    estado_bd = 'ERROR'
+            else:
+                # Retorno booleano (compatibilidad): True = ACTIVO, False = SIMULADO/SEMI
+                ok_bloqueo = bool(resultado_bloqueo)
+                estado_bd = 'ACTIVO' if ok_bloqueo else 'SIMULADO/SEMI'
+
             try:
                 cursor.execute('''
-                    INSERT INTO bloqueos (timestamp, ip_src, tipo_ataque, duracion, estado)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (timestamp, ip_src, tipo_final, duracion, estado_bd))
+                    INSERT INTO bloqueos (timestamp, ip_src, tipo_ataque, duracion, estado,
+                                          comando, respuesta, confirmado)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (timestamp, ip_src, tipo_final, duracion, estado_bd,
+                      comando, respuesta, confirmado))
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[!] No se pudo registrar el bloqueo en BD: {e}")
 
             # Registrar el bloqueo en el archivo .log
             registrar_bloqueo_log(ip_src, f"BLOQUEO_{tipo_ataque.upper().replace(' ', '_')}", duracion)
 
-            accion = "Bloqueo real (MikroTik)" if bloqueo_real else "Alerta Semi-Autónoma"
+            estado_bd_lower = estado_bd.lower()
+            if 'confirmado' in estado_bd_lower:
+                accion = "Bloqueo real confirmado (MikroTik)"
+            elif estado_bd_lower in ('simulado', 'simulado/semi'):
+                accion = "Sin bloqueo real (modo simulado/semi-autónomo)"
+            else:
+                accion = "Error en bloqueo (MikroTik)"
             comunicador.nuevo_bloqueo.emit([ip_src, accion, duracion, tipo_ataque, severidad_ips])
 
 

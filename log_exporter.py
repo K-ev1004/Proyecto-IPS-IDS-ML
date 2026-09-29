@@ -140,7 +140,7 @@ def registrar_bloqueo_log(ip, accion, duracion):
     Args:
         ip (str): Dirección IP del host bloqueado/desbloqueado
         accion (str): Tipo de acción (BLOQUEO_AUTOMATICO o DESBLOQUEO_AUTOMATICO)
-        duracion (int): Duración del bloqueo en minutos
+        duracion (int): Duración del bloqueo en HORAS (los llamadores pasan horas)
     """
     try:
         # Asegurar que la carpeta existe
@@ -151,7 +151,7 @@ def registrar_bloqueo_log(ip, accion, duracion):
         
         with open(ruta_archivo, 'a', encoding='utf-8') as f:
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            f.write(f"[{timestamp}] IP: {ip} | Acción: {accion} | Duración: {duracion} min\n")
+            f.write(f"[{timestamp}] IP: {ip} | Acción: {accion} | Duración: {duracion} h\n")
             
     except Exception as e:
         print(f"[X] Error registrando bloqueo en log: {e}")

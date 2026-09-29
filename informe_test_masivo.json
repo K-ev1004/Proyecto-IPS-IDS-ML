@@ -3,7 +3,7 @@
     "total_flujos": 150000,
     "accuracy": 0.8629,
     "f1_macro": 0.7423,
-    "tiempo_pred_s": 1.13,
+    "tiempo_pred_s": 2.09,
     "clases": 7,
     "clases_detalle": {
       "DDoS_Distribuido": {
@@ -212,33 +212,28 @@
     "fn": 7055,
     "tp": 21559,
     "tasa_fp_benigno": 0.00115,
-    "tiempo_pred_s": 0.03,
+    "tiempo_pred_s": 0.04,
     "umbral": 0.3
   },
   "T3": {
     "flujos_procesados": 6000,
-    "sql_persistidos": 0,
-    "con_trazabilidad_features_json": 0,
-    "tiempo_cadena_s": 39.88,
-    "filas_en_bd_tmp": 0,
-    "precision_cadena": 0,
-    "recall_cadena": 0.0,
-    "tp": 0,
-    "fp": 0,
-    "fn": 3000
+    "sql_persistidos": 2343,
+    "con_trazabilidad_features_json": 2390,
+    "sql_guard_confirmados": 6000,
+    "tiempo_cadena_s": 74.53,
+    "filas_en_bd_tmp": 2390,
+    "precision_cadena": 0.9983,
+    "recall_cadena": 0.7797,
+    "tp": 2339,
+    "fp": 4,
+    "fn": 661
   },
   "T4": {
     "archivos_log": [
-      "logsciberseguridad 2026-07-28 al 2026-08-04.log",
-      "logsciberseguridad 2026-08-24 al 2026-08-31.log",
-      "logsciberseguridad 2026-08-25 al 2026-09-01.log",
-      "logsciberseguridad 2026-08-26 al 2026-09-02.log",
-      "logsciberseguridad 2026-08-28 al 2026-09-04.log",
-      "logsciberseguridad 2026-08-30 al 2026-09-06.log",
-      "logsciberseguridad 2026-09-01 al 2026-09-08.log",
       "logs_bloqueos.log"
     ],
     "linea_bloqueo_escrita": true,
-    "ruta_bloqueos": "C:\\IDS-IPS\\Proyecto-IPS-IDBS-ML\\logs_ciberseguridad\\logs_bloqueos.log"
+    "ruta_bloqueos": "C:\\Users\\rojas\\AppData\\Local\\Temp\\ids_logs_test_lngqwc9x\\logs_bloqueos.log",
+    "carpeta_logs_temp": "C:\\Users\\rojas\\AppData\\Local\\Temp\\ids_logs_test_lngqwc9x"
   }
 }

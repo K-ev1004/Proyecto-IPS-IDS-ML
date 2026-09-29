@@ -1,17 +1,26 @@
-M�TRICAS SQLIGUARD (D1=Union train, D2=Blind test externo)
+MÉTRICAS SQLIGUARD (UMBRAL CANÓNICO 0.30)
 =======================================================
-Accuracy:    0.8386
-Precision:   0.9984
-Recall:      0.6783
-F1:          0.8078
+Configuración: D2 = Blind test externo (Zenodo, 57,229 flujos NetFlow).
+Métricas obtenidas por la RUTA DE PRODUCCIÓN (test masivo T2).
+Umbral de confirmación SQLi: 0.30   <-- CANÓNICO DEL PROYECTO
+
+Accuracy:    0.8761
+Precision:   0.9985
+Recall:      0.7534
+F1:          0.8588
 
                precision    recall  f1-score   support
 
-      Benigno       0.76      1.00      0.86     28615
-Inyeccion_SQL       1.00      0.68      0.81     28614
+      Benigno       0.999      0.802     0.890     28615
+Inyeccion_SQL       0.998      0.753     0.859     28614
 
-     accuracy                           0.84     57229
-    macro avg       0.88      0.84      0.83     57229
- weighted avg       0.88      0.84      0.83     57229
-Matriz: TN=28583 FP=32 FN=9204 TP=19410
-Umbral confirmacion SQLi: 0.5
+ Matriz: TN=28582 FP=33 FN=7055 TP=21559
+ Tasa FP sobre benigno: 0.115%
+ Tiempo predicción (57,229 flujos): 0.03 s
+
+------------------------------------------------------------------------
+NOTA HISTÓRICA: el reporte anterior registraba umbral 0.5
+(TN=28583 FP=32 FN=9204 TP=19410); quedó REEMPLAZADO por el umbral
+canónico 0.30, que mejora recall (0.6783 -> 0.7534) conservando FP en
+mínimos. La metadata del modelo (sql_guard_features.pkl)
+guarda umbral=0.3, por lo que producción YA opera con este valor.

@@ -1,0 +1,8 @@
+{
+  "perfil": "lab",
+  "ip": "10.10.0.2",
+  "user": "ids",
+  "pass": "CLAVE_CHR_LAB",
+  "port": 22,
+  "address_list": "IDS_BLACKLIST"
+}

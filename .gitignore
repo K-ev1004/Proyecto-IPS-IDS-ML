@@ -22,6 +22,20 @@ venv/
 env/
 .venv/
 
+# Credenciales/configuración MikroTik por perfil (no versionar credenciales)
+config/mikrotik_lab.json
+config/mikrotik_prod.json
+config/mikrotik_*.json
+!config/mikrotik.example.json
+!config/mikrotik_lab.json.example
+
+# Laboratorio virtual (kit _lab/): solo se versionan scripts y LEEME
+_lab/alpine.json
+_lab/vms/
+_lab/chr-*.vmdk
+_lab/chr-*.vdi
+_lab/*.iso
+
 # Evidencias y logs
 evidencia/
 *.log
