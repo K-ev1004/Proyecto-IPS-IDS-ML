@@ -49,7 +49,9 @@ def _cargar_config_mikrotik():
     ruta_perfil = os.path.join(CONFIG_DIR, f'mikrotik_{perfil}.json')
     if os.path.exists(ruta_perfil):
         try:
-            with open(ruta_perfil, encoding='utf-8') as f:
+            # utf-8-sig tolera el BOM que escriben Notepad y
+            # `Set-Content -Encoding UTF8` de Windows PowerShell 5.1.
+            with open(ruta_perfil, encoding='utf-8-sig') as f:
                 cfg.update(_json.load(f))
             print(f"[CFG] Perfil MikroTik '{perfil}' cargado: {ruta_perfil}")
         except Exception as e:

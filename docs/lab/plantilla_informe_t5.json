@@ -1,0 +1,53 @@
+﻿{
+  "chr_ip": "10.10.0.2",
+  "atacante": "10.10.0.3",
+  "victima": "10.10.1.3",
+  "gates": [
+    {
+      "prueba": "chr_ssh",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"SSH+ver OK: ...\""
+    },
+    {
+      "prueba": "reglas_drop",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"forward=True input=True\""
+    },
+    {
+      "prueba": "pre_ping",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"recibidos=3/3 (rc=0, True)\""
+    },
+    {
+      "prueba": "bloqueo_confirmado",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"flujos_procesados=N estado=CONFIRMADO(readback)\""
+    },
+    {
+      "prueba": "post_ping_denegado",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"recibidos=0/3 (rc=0, False) (esperado recibidos=0)\""
+    },
+    {
+      "prueba": "drop_forward_stats",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"paquetes drop en forward = N (esperado >0 tras el ataque)\""
+    },
+    {
+      "prueba": "address_list_presente",
+      "pass": null,
+      "detalle": "<PENDIENTE> · print terse de la address-list"
+    },
+    {
+      "prueba": "desbloqueado",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"modo=real confirmado(eliminado)=False\""
+    },
+    {
+      "prueba": "tras_ping_restaurado",
+      "pass": null,
+      "detalle": "<PENDIENTE> · se llena con \"recibidos=3/3 (rc=0, True) (esperado recibidos>0)\""
+    }
+  ],
+  "flujos_procesados_deteccion": null
+}

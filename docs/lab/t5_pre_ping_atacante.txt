@@ -1,0 +1,6 @@
+SEQ HOST                                     SIZE TTL TIME       STATUS      
+    0 10.10.1.3                                  56  63 268us     
+    1 10.10.1.3                                  56  63 414us     
+    2 10.10.1.3                                  56  63 288us     
+    sent=3 received=3 packet-loss=0% min-rtt=268us avg-rtt=323us 
+   max-rtt=414us

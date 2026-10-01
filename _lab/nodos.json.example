@@ -1,0 +1,24 @@
+{
+  "_comentario": [
+    "Nodos del laboratorio IDS/IPS sobre RouterOS CHR (UNIPAZ, Fase III).",
+    "atacante y victima son clones del CHR del router (gold image), por lo que",
+    "comparten su usuario y clave SSH. Si defines 'pass' aqui tiene prioridad;",
+    "si lo omites se usa config/mikrotik_lab.json; si no, las variables de",
+    "entorno LAB_ATACANTE_PASS / LAB_VICTIMA_PASS.",
+    "Regenerar con: provision_chr.ps1  ->  chr_apply_config.py --nodo <rol>"
+  ],
+  "atacante": {
+    "vm": "CHR-ATACANTE-LAB",
+    "host": "10.10.0.3",
+    "user": "ids",
+    "port": 22,
+    "notas": "1 sola NIC real (nic1 en idslab_wan). Genera el trafico de ataque."
+  },
+  "victima": {
+    "vm": "CHR-VICTIMA-LAB",
+    "host": "10.10.1.3",
+    "user": "ids",
+    "port": 22,
+    "notas": "nic1 en idslab_wan queda deshabilitada; nic2 (ether2) en idslab_lan."
+  }
+}

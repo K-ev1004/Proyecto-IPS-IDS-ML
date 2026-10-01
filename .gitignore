@@ -31,6 +31,9 @@ config/mikrotik_*.json
 
 # Laboratorio virtual (kit _lab/): solo se versionan scripts y LEEME
 _lab/alpine.json
+# nodos.json puede llevar 'pass' propia por nodo: se versiona solo la plantilla
+_lab/nodos.json
+!_lab/nodos.json.example
 _lab/vms/
 _lab/chr-*.vmdk
 _lab/chr-*.vdi

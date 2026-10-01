@@ -3,13 +3,12 @@
 # t5_routeros_ips.py - PRUEBA T5: IPS sobre RouterOS REAL (CHR) en el LAB.
 # Universidad UNIPAZ - Proyecto IDS/IPS (Fase III).
 # -----------------------------------------------------------------------------
-# ORIGEN DE ESTE ARCHIVO: kit _lab/ (se disena y se ejecuta en la MAQUINA
-# OBJETIVO con VirtualBox y capacidad para 3 VMs). Esta maquina actual NO lo
-# ejecuta: no hay CHR ni VMs levantadas aqui.
+# Se ejecuta en la MAQUINA OBJETIVO (VirtualBox + las 3 VMs CHR encendidas).
+# Previo obligatorio: provision_chr.ps1 -Configurar  ->  verificar_lab.py verde.
 #
 # Cadena verificada:
 #   1) CHR alcance(SSH) + version RouterOS + reglas de drop presentes.
-#   2) Ping BASELINE atacante(10.10.0.50) -> victima(10.10.1.50) OK.
+#   2) Ping BASELINE atacante(10.10.0.3) -> victima(10.10.1.3) OK.
 #   3) Deteccion determinista con features SQLi de D2 a traves de la ruta de
 #      produccion (ids.on_flow_ready) usando la IP del atacante del lab ->
 #      bloqueo autonomo real (bloquear_ip_mikrotik) -> readback CONFIRMADO.
@@ -18,12 +17,18 @@
 #   5) Desbloqueo (readback vacio) -> conectividad restaurada.
 #   6) Gates PASS/FAIL + evidencias en docs/lab/.
 #
+# Los tres nodos son RouterOS CHR (atacante y victima son clones del router), de
+# modo que el ping se hace con '/ping <ip> count=3' y NO con 'ping -c': RouterOS
+# devuelve codigo de salida 0 aun con cero paquetes recibidos. El veredicto sale
+# de 'sent=.. received=..' -> ver nodos_lab.ping_nodo().
+#
 # Uso (maquina objetivo):
 #   setx MIKROTIK_PROFILE lab   (o config/mikrotik_lab.json con credenciales CHR)
 #   setx IDS_IPS_AUTONOMO 1
 #   python t5_routeros_ips.py
 # =============================================================================
 import os
+import re
 import sys
 import json
 import sqlite3
@@ -34,37 +39,21 @@ _PROJ = os.path.dirname(_LAB)
 if _PROJ not in sys.path:
     sys.path.insert(0, _PROJ)
 
+# --- Perfil de los nodos CHR del laboratorio (nodos.json + credenciales CHR) ---
+from nodos_lab import (  # noqa: E402
+    cargar_nodos, ping_nodo, resumir_ping, version_routeros)
+
 # --- Credenciales del entorno de pruebas (lab), nunca en el codigo ---
 def _leer_perfil_lab():
     ruta = os.path.join(_PROJ, 'config', 'mikrotik_lab.json')
     if os.path.exists(ruta):
-        with open(ruta, encoding='utf-8') as f:
+        with open(ruta, encoding='utf-8-sig') as f:
             return json.load(f)
     return {}
 
-def _alpine_creds():
-    ruta = os.path.join(_LAB, 'alpine.json')
-    cfg = {}
-    if os.path.exists(ruta):
-        with open(ruta, encoding='utf-8') as f:
-            cfg = json.load(f)
-    atacante = cfg.get('atacante', {})
-    victima = cfg.get('victima', {})
-    return {
-        'atacante': {
-            'host': os.environ.get('LAB_ATACANTE_IP', atacante.get('host', '10.10.0.50')),
-            'user': atacante.get('user', 'root'),
-            'pass': os.environ.get('LAB_ATACANTE_PASS', atacante.get('pass', '')),
-        },
-        'victima': {
-            'host': os.environ.get('LAB_VICTIMA_IP', victima.get('host', '10.10.1.50')),
-            'user': victima.get('user', 'root'),
-            'pass': os.environ.get('LAB_VICTIMA_PASS', victima.get('pass', '')),
-        },
-    }
-
-ATACANTE = '10.10.0.50'
-VICTIMA = '10.10.1.50'
+nodos = cargar_nodos()
+ATACANTE = nodos['atacante']['host']
+VICTIMA = nodos['victima']['host']
 
 _perfil_chr = _leer_perfil_lab()
 os.environ.setdefault('MIKROTIK_PROFILE', _perfil_chr.get('perfil', 'lab'))
@@ -94,9 +83,11 @@ def ssh_run(host, user, pwd, cmd, port=22, timeout=10):
     cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     cli.connect(host, port=port, username=user, password=pwd, timeout=timeout)
     _, out, err = cli.exec_command(cmd, timeout=timeout)
-    rc = out.channel.recv_exit_status()
+    # Leer antes de recv_exit_status: al reves, un stdout grande llena el buffer
+    # del canal y exec_command se queda esperando el codigo de salida.
     salida = out.read().decode(errors='replace') or ''
     error = err.read().decode(errors='replace') or ''
+    rc = out.channel.recv_exit_status()
     cli.close()
     return rc, salida.strip(), error.strip()
 
@@ -169,9 +160,9 @@ def gate(nombre, ok, detalle):
 print("[T5] Prueba IPS contra RouterOS real (usando la cadena de producción) ...")
 if mikrotik_api.ROUTER_PASS == 'LAB_PENDIENTE_CONFIG':
     sys.exit("[X] Credenciales CHR no configuradas (config/mikrotik_lab.json o MIKROTIK_*).")
-chrome = _alpine_creds()
-if not chrome['atacante']['pass']:
-    sys.exit("[X] _lab/alpine.json sin credenciales root del atacante.")
+if not nodos['atacante']['pass']:
+    sys.exit("[X] Credenciales de los nodos no configuradas (_lab/nodos.json, "
+             "config/mikrotik_lab.json o LAB_ATACANTE_PASS).")
 
 print(f".. CHR objetivo: {os.environ['MIKROTIK_IP']}  |  atacante={ATACANTE}  victima={VICTIMA}")
 
@@ -180,7 +171,8 @@ print(f".. CHR objetivo: {os.environ['MIKROTIK_IP']}  |  atacante={ATACANTE}  vi
 # =============================================================================
 rc, ver, err = ssh_chr('/system resource print')
 ver = ver or err
-gate('chr_ssh', rc == 0 and 'RouterOS' in ver, f"SSH+ver OK: {ver.splitlines()[:1]}")
+gate('chr_ssh', rc == 0 and version_routeros(ver),
+     f"SSH+ver OK: {ver.splitlines()[:1]}")
 guardar_evidencia('t5_chr_version.txt', ver)
 
 rc, filtros, err = ssh_chr('/ip firewall filter print terse')
@@ -192,14 +184,15 @@ gate('reglas_drop', drop_fwd and drop_inp,
 guardar_evidencia('t5_chr_firewall_terse.txt', filtros)
 
 # =============================================================================
-# 2) BASELINE: atacante -> victima
+# 2) BASELINE: atacante -> victima (a traves del router)
 # =============================================================================
-a = chrome['atacante']
-rc, out, err = ssh_run(a['host'], a['user'], a['pass'],
-                       f'ping -c 3 -W 2 {VICTIMA}')
-pre_ping = (rc == 0)
-gate('pre_ping', pre_ping, f"atacante ping victima rc={rc}")
-guardar_evidencia('t5_pre_ping_atacante.txt', out)
+# Veredicto por 'received', no por rc: RouterOS devuelve rc=0 tambien cuando el
+# paquete no llega (p.ej. con la regla de drop activa).
+a = nodos['atacante']
+p_pre = ping_nodo(a, VICTIMA)
+pre_ping = p_pre['ok'] and p_pre['parseado']
+gate('pre_ping', pre_ping, resumir_ping(p_pre))
+guardar_evidencia('t5_pre_ping_atacante.txt', p_pre['salida'])
 
 # =============================================================================
 # 3) DETECCIÓN D2 (ruta de producción) + BLOQUEO AUTÓNOMO REAL
@@ -249,19 +242,37 @@ else:
 # =============================================================================
 # 4) DIFERENCIAL POST-BLOQUEO
 # =============================================================================
-rc_post, out_post, err = ssh_run(a['host'], a['user'], a['pass'],
-                                 f'ping -c 3 -W 2 {VICTIMA}')
-post_ping = (rc_post != 0)
-gate('post_ping_denegado', post_ping, f"atacante ping victima rc={rc_post} (esperado !=0)")
-guardar_evidencia('t5_post_ping_atacante.txt', out_post)
+# RouterOS envuelve las tablas en SSH no interactivo y 'print stats' ignora
+# 'terse', así que devuelve una tabla de columnas:
+#   Columns: CHAIN, ACTION, BYTES, PACKETS
+#   0 forward  drop        0        0
+# El primer numero de esa linea es el INDICE de la regla, no los paquetes: se
+# toma la ultima fila de datos y su ultima columna (PACKETS).
+RE_FILA_STATS = re.compile(r'^\s*\d+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s*$', re.M)
+
+
+def _paquetes_de_stats(stats):
+    """Extrae PACKETS de '/ip firewall filter print stats ...'."""
+    texto = stats or ''
+    m = re.search(r'packets[=:]\s*(\d+)', texto)
+    if m:
+        return int(m.group(1))
+    filas = RE_FILA_STATS.findall(texto)
+    return int(filas[-1][1]) if filas else 0
+
+
+# Contadores a cero antes de la prueba: sin esto un intento previo del lab
+# inflaria el contador y el gate no distinguiria el ataque de este ensayo.
+ssh_chr('/ip firewall filter reset-counters numbers=0')
+
+p_post = ping_nodo(a, VICTIMA)
+post_ping = p_post['parseado'] and p_post['recibidos'] == 0
+gate('post_ping_denegado', post_ping,
+     resumir_ping(p_post) + " (esperado recibidos=0)")
+guardar_evidencia('t5_post_ping_atacante.txt', p_post['salida'])
 
 rc, stats, err = ssh_chr('/ip firewall filter print stats where comment="IDS_BLACKLIST_DROP_FORWARD"')
-_npks = 0
-if 'packets=' in (stats or ''):
-    try:
-        _npks = int([p for p in stats.replace('packets=', ' ').split() if p.isdigit()][0])
-    except (IndexError, ValueError):
-        _npks = 0
+_npks = _paquetes_de_stats(stats)
 gate('drop_forward_stats', _npks > 0,
      f"paquetes drop en forward = {_npks} (esperado >0 tras el ataque)")
 guardar_evidencia('t5_chr_drop_stats_forward.txt', stats or err)
@@ -275,14 +286,19 @@ guardar_evidencia('t5_chr_address_list.txt', lista or err)
 # 5) DESBLOQUEO + RESTAURACIÓN
 # =============================================================================
 r_des = mikrotik_api.desbloquear_ip_mikrotik(ATACANTE)
-gate('desbloqueado', bool(r_des.get('ok')) and not r_des.get('confirmado'),
+# 'confirmado' en el desbloqueo significa "readback VACIO: la regla ya no esta",
+# o sea exactamente el exito. La condicion era la inversa ('not confirmado') y
+# venia del modo mock, donde el retorno era _resultado(True,'mock',False,...) y un
+# False ahi significaba 'no se confirmo'. Con la API real eso hacia fallar el
+# gate justo cuando el desbloqueo si se habia confirmado.
+des_ok = bool(r_des.get('ok')) and bool(r_des.get('confirmado'))
+gate('desbloqueado', des_ok,
      f"modo={r_des.get('modo')} confirmado(eliminado)={r_des.get('confirmado')}")
 
-rc_tras, out_tras, err = ssh_run(a['host'], a['user'], a['pass'],
-                                 f'ping -c 3 -W 2 {VICTIMA}')
-gate('tras_ping_restaurado', rc_tras == 0,
-     f"atacante ping victima rc={rc_tras} (esperado 0)")
-guardar_evidencia('t5_tras_desbloqueo_ping.txt', out_tras)
+p_tras = ping_nodo(a, VICTIMA)
+tras_ok = p_tras['ok'] and p_tras['parseado']
+gate('tras_ping_restaurado', tras_ok, resumir_ping(p_tras) + " (esperado recibidos>0)")
+guardar_evidencia('t5_tras_desbloqueo_ping.txt', p_tras['salida'])
 
 # =============================================================================
 # Cierre

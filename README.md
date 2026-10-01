@@ -153,6 +153,7 @@ flowchart TD
 │   ├── adr/                     # Registros de decisiones (ADRs)
 │   ├── guias/                   # Guías de instalación, uso y entrenamiento
 │   ├── ml/                      # Análisis ML (algunos históricos)
+│   ├── lab/                     # Laboratorio virtual: evidencia T5 (CHR real)
 │   ├── red/                     # Arquitectura de red UNIPAZ
 │   ├── tesis/                   # Capítulos y anteproyecto (académico)
 │   └── CHANGELOG.md             # Historial de cambios del sistema
@@ -166,6 +167,7 @@ flowchart TD
 | [Guias](./docs/guias/) | Instalación, uso de la GUI y entrenamiento de modelos |
 | [ADRs](./docs/adr/) | Decisiones de arquitectura (v5, SQLiGuard, Git LFS) |
 | [ML](./docs/ml/) | Análisis técnico y viabilidad de datasets |
+| [Laboratorio](./docs/lab/) | Laboratorio virtual (RouterOS CHR), T5 y [demo en vivo](./docs/lab/demo-bloqueo.md) |
 | [Red UNIPAZ](./docs/red/) | Topología de red y plan de despliegue |
 | [Tesis](./docs/tesis/) | Anteproyecto y capítulos académicos |
 | [CHANGELOG](./docs/CHANGELOG.md) | Historial de cambios verificados |

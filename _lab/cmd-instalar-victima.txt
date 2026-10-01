@@ -1,0 +1,1 @@
+for d in /dev/sr?; do mount -t iso9660 $d /mnt 2>/dev/null && [ -f /mnt/INSTALL.SH ] && break; done; sh /mnt/INSTALL.SH vic 10.10.1.50 10.10.1.2

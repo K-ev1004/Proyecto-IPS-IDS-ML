@@ -11,9 +11,9 @@
 - La Fase III convirtió el sistema en un **IDS/IPS**: CatBoost v5 (7 clases), detector dedicado SQLiGuard, flujos bidireccionales, bloqueo automatizado vía MikroTik (SSH) y exportador de logs con integridad.
 - **Brecha de la Fase II (verificada en datos):** 96.7 % de los eventos en producción quedaron clasificados como "Desconocido"; no existía ningún mecanismo de bloqueo.
 - **Estado de la Fase III (verificado):** el modelo v5 logra accuracy 0.86 (informe de entrenamiento y prueba T1). El SQLiGuard logra precisión >0.998 con el dataset externo. La prueba de **cadena completa (T3)** quedó corregida en P0: ahora **persiste 2,343 de 3,000 ataques SQL** (precision_cadena 0.9983, recall_cadena 0.7797); antes persistía 0 de 3,000 por un bug de esquema de base de datos.
-- **Bloqueo:** existen 2,553 registros de bloqueo en BD y 4 líneas en el log, todos simulados o de prueba. **No existe evidencia de regla confirmada en un equipo MikroTik real.**
+- **Bloqueo:** existen 2,553 registros de bloqueo en BD y 4 líneas en el log de producción, todos simulados o de prueba. **P2 aportó además evidencia en un equipo MikroTik real** (RouterOS CHR): regla confirmada por readback y corte de conectividad, ver T5 en §P2.
 - **P1 aplicado (verificado):** credenciales fuera del código (env + perfiles JSON), unidad de log corregida a horas, decisión SQL endurecida (SQLi solo con confirmación SQLiGuard), y gates de aprobación T1–T4 con logs aislados en carpeta temporal.
-- **P2 diseñado (ejecución diferida):** kit `_lab/` (RouterOS CHR 7.23.7 + 2 Alpine) y prueba T5 lista para la máquina con capacidad de 3 VMs; aquí no se ejecuta por decisión del usuario.
+- **P2 ejecutado y aprobado (T5 9/9):** el laboratorio se montó sobre tres nodos RouterOS CHR 7.23.7 (router 10.10.0.2/10.10.1.2, atacante 10.10.0.3, víctima 10.10.1.3). `verificar_lab.py` dio 13/13 y T5 dio 9/9 gates PASS con `exit 0`: detección D2 por la ruta de producción, bloqueo en `IDS_BLACKLIST` confirmado por readback, 3 paquetes contados en la regla `forward`, atacante a 0/3 paquetes y conectividad restaurada a 3/3 tras el desbloqueo. Evidencias en `docs/lab/`.
 - **Decisión de validación:** toda prueba de funcionamiento y efectividad se ejecutará en un **entorno virtual replicando la red**, sin tocar la red real de la universidad.
 
 ---
@@ -197,16 +197,15 @@ Generada sobre los 57,229 flujos externos (D2/Zenodo) por la **ruta de producci�
 5. **Verificación de cierre (batería P1, 4/4 PASS, exit 0):** T1 acc 0.8629 / F1-macro 0.7423; T2 P 0.9985, R 0.7534, FP 33 (0.115 % sobre benigno); T3 2,343/3,000 persistidos y prec_cadena 0.9983; T4 `linea_bloqueo_escrita=True` en la carpeta temporal. El log de producción quedó intacto (su última línea sigue siendo la corrida P0, formato previo «24 min»). Resultados en `informe_test_masivo.json` (campo `gates`).
 
 ### Pendientes verificados (no cubiertos en P0)
-1. T5 (prueba de verificación de bloqueo) **no existe** — diseño del laboratorio virtual con RouterOS CHR.
-2. Sin verificación de regla en el equipo **real** ni de conectividad post-bloqueo (solo queda preparado el registro; falta ejecutar en el lab).
-3. Ninguna prueba usa tráfico capturado en vivo por Npcap.
+1. Ninguna prueba usa tráfico capturado en vivo por Npcap.
+2. T5 quedó cerrada en P2: el laboratorio virtual se ejecutó y pasó 9/9 (ver §P2). Queda como mejora futura escalar el laboratorio a más nodos o añadir captura en vivo.
 
-### P2 — Laboratorio virtual (diseñado; ejecución diferida a máquina con capacidad 3 VMs)
-- **Decisión del usuario:** la prueba T5 no se ejecuta en la máquina actual; se preparó un **kit portable** autocontenido (`_lab/`) para la máquina objetivo (VirtualBox + RouterOS CHR 7.23.7 + 2 Alpine, ~1 GB de RAM de invitados).
-- **Kit:** `provision_chr.ps1` (redes host-only `idslab_wan`/`idslab_lan`, VM CHR), `chr_bootstrap_console.txt` (primera consola una sola vez), `chr_apply_config.py` (IPs + reglas `/ip firewall filter` drop en `forward`+`input` para `IDS_BLACKLIST` por SSH), `provision_alpine.ps1` (atacante 10.10.0.50 / víctima 10.10.1.50), `t5_routeros_ips.py` (T5 completo), `LEEME_LAB.md` (runbook).
-- **T5 diseñado:** baseline atacante→víctima OK → detección determinista con features SQLi de D2 por la ruta de producción (`ids.on_flow_ready`, IP del atacante del lab) → bloqueo autónomo real (`bloquear_ip_mikrotik` con readback → estado `CONFIRMADO`) → **diferencial de conectividad** (el drop del `forward` deja a la víctima inalcanzable para el atacante) → desbloqueo → restauración. Gates PASS/FAIL y evidencias en `docs/lab/`.
-- **Código tocado:** `ids.py` expone `modo_ips_autonomo` por entorno (`IDS_IPS_AUTONOMO=1`, default `False`); plantilla `config/mikrotik_lab.json.example` (el archivo real es gitignored). `paramiko` debe instalarse en la máquina objetivo (en esta máquina aún no, por eso el bloqueo real sigue en mock).
-- **Pendiente explícito de ejecución:** seguir `_lab/LEEME_LAB.md`; registrar el resultado real (números y `print terse`) en esta sección y en `CHANGELOG` [17].
+### P2 — Laboratorio virtual (ejecutado y aprobado; T5 9/9)
+- **Montaje real sobre tres CHR.** La variante Alpine del diseño inicial se descartó por bloqueo en la instalación (sin `linux-lts`, repositorio local no firmable y `confirm_erase` interactivo), así que atacante y víctima son clones del disco del router (gold image). Topología: host 10.10.0.1 / 10.10.1.1, router `CHR-IDS-LAB` (`ether1` 10.10.0.2, `ether2` 10.10.1.2), atacante `CHR-ATACANTE-LAB` 10.10.0.3 con una sola NIC, víctima `CHR-VICTIMA-LAB` 10.10.1.3 en `ether2` con `ether1` deshabilitada. Redes host-only con DHCP de VirtualBox apagado (direccionamiento 100 % estático).
+- **Kit:** `provision_chr.ps1` (redes host-only, gold image, discos independientes por clon, configuración en serie con el router apagado), `chr_apply_config.py` (config por SSH en dos fases: entrada por la IP de bootstrap → IP final → retirada del bootstrap, con la interfaz destino detectada en runtime), `verificar_lab.py`, `t5_routeros_ips.py`, `nodos_lab.py`/`nodos.json`, `LEEME_LAB.md`.
+- **MACs de los clones.** Deben ser las del router (`08:00:27:49:7F:9C`, `08:00:27:D2:A1:09`): con MACs desconocidas RouterOS no reconoce `ether1`/`ether2` y los clones quedan inalcanzables sin consola. RouterOS 7 rechaza escribirlas por CLI (`bad parameter`), de modo que el duplicado es inevitable. Se **midió** en lugar de suponer: 30 pings host→atacante y 30 atacante→router con las tres VMs encendidas dieron 0 % de pérdida.
+- **T5 ejecutado (9/9, `exit 0`).** Secuencia reproducida el 2026-10-01: SSH y versión del CHR OK → reglas `IDS_BLACKLIST_DROP_FORWARD/INPUT` presentes → atacante→víctima 3/3 → detección SQLi por la ruta de producción (`ids.on_flow_ready`) → `address-list add` con readback `CONFIRMADO` → atacante→víctima 0/3 → 3 paquetes contados en la regla `forward` → entrada presente en `IDS_BLACKLIST` → desbloqueo con readback vacío → atacante→víctima 3/3 restaurado. `verificar_lab.py`: 13/13.
+- **Resultado:** la afirmación de que el bloqueo estaba "solo en mock" queda superada por evidencia en equipo real. Evidencias: `docs/lab/t5_*.txt`, `docs/lab/t5_consola.txt` e `docs/lab/informe_t5.json`. Registrado en `CHANGELOG` [18].
 
 ---
 
@@ -215,5 +214,6 @@ Generada sobre los 57,229 flujos externos (D2/Zenodo) por la **ruta de producci�
 - Antes de la Fase III: el sistema **detectaba mucho, clasificaba casi nada en vivo y no bloqueaba nada**.
 - La Fase III aporta: 7 clases, precisión alta en tráfico normal y escaneo, un detector SQL dedicado con falsos positivos mínimos, flujos bidireccionales y trazabilidad.
 - La **cadena completa quedó verificada** (T3: 2,343/3,000 SQLi persistidos con 4 falsos positivos).
+- **La respuesta activa quedó verificada contra un equipo real:** T5 pasó 9/9 sobre RouterOS CHR, con bloqueo confirmado por readback, corte real de la conectividad en `forward` y restauración tras el desbloqueo.
 - **P1 cerró los pendientes de seguridad y calidad:** las credenciales ya no están en el código, la decisión SQL nunca persiste `Inyeccion_SQL` sin confirmación de SQLiGuard, la unidad del log es correcta, y la batería de pruebas queda automatizada con umbrales de aprobación (PASS/FAIL) sin contaminar los logs de producción.
-- El bloqueo está implementado y registrado con confirmación por readback, pero **aún no probado contra un RouterOS real**; su efectividad exige la réplica en el laboratorio virtual (diseñar T5).
+- El bloqueo está implementado y registrado con confirmación por readback, y **quedó probado contra un RouterOS real** en T5 (9/9): la regla se confirmó en el equipo, el atacante dejó de alcanzar a la víctima y recuperó la conectividad tras el desbloqueo.

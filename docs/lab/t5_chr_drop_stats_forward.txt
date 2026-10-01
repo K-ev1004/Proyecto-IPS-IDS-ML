@@ -1,0 +1,4 @@
+Columns: CHAIN, ACTION, BYTES, PACKETS
+# CHAIN    ACTION  BYTES  PACKETS
+;;; IDS_BLACKLIST_DROP_FORWARD
+0 forward  drop      168        3

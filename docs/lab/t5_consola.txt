@@ -1,0 +1,59 @@
+﻿T5 - salida de consola completa
+fecha: 2026-10-01 15:56:45
+host:  DESKTOP-AJEHTV4
+comando: python _lab\t5_routeros_ips.py  (MIKROTIK_PROFILE=lab, IDS_IPS_AUTONOMO=1)
+exit=0
+[CFG] Perfil MikroTik 'lab' cargado: C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\config\mikrotik_lab.json
+[OK] IP local detectada: 172.10.0.112
+[OK] Modelo ML v5 (Multi-Dataset) cargado correctamente.
+[OK] SQLiGuard (detector binario SQLi) cargado correctamente.
+       Umbral confirmaci¾n SQLi: 0.3
+[T5] Prueba IPS contra RouterOS real (usando la cadena de producci¾n) ...
+.. CHR objetivo: 10.10.0.2  |  atacante=10.10.0.3  victima=10.10.1.3
+    GATE chr_ssh: PASS  (SSH+ver OK: ['uptime: 7m13s                      '])
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_chr_version.txt
+    GATE reglas_drop: PASS  (forward=True input=True)
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_chr_firewall_terse.txt
+    GATE pre_ping: PASS  (recibidos=3/3 (rc=0, True))
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_pre_ping_atacante.txt
+ALERT [IPS] Criterios de bloqueo cumplidos para 10.10.0.3 | Tipo: Inyeccion_SQL | Severidad: CRITICA
+
+[IPS MIKROTIK] Iniciando bloqueo activo para 10.10.0.3
+[*] Conectando a MikroTik (10.10.0.2)...
+[*] Ejecutando: /ip firewall address-list add list="IDS_BLACKLIST" address=10.10.0.3 timeout=24h comment="Bloqueado automßticamente por NIPS CatBoost - 2026-10-01 15:56:38"
+[OK] Readback IDS_BLACKLIST: regla presente = True
+      Respuesta equipo: 0 D comment=Bloqueado automticamente por NIPS CatBoost - 2026-10-01 15:56:38 list=IDS_BLACKLIST address=10.10.0.3 creation-time=2026-10-01 20:56:46 timeout=1d dynamic=yes
+[OK] IP 10.10.0.3 bloqueada exitosamente por 24 horas (CONFIRMADA en MikroTik).
+    GATE bloqueo_confirmado: PASS  (flujos_procesados=2 estado=CONFIRMADO(readback))
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_bloqueo_readback.txt
+    GATE post_ping_denegado: PASS  (recibidos=0/3 (rc=0, False) (esperado recibidos=0))
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_post_ping_atacante.txt
+    GATE drop_forward_stats: PASS  (paquetes drop en forward = 3 (esperado >0 tras el ataque))
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_chr_drop_stats_forward.txt
+    GATE address_list_presente: PASS  (print terse: 0 D comment=Bloqueado automticamente por NIPS CatBoost - 2026-10-01 15:56:38 list=IDS_BLACKLIST address=10.10.0.3 creati)
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_chr_address_list.txt
+
+[IPS MIKROTIK] Iniciando desbloqueo activo para 10.10.0.3
+[*] Conectando a MikroTik (10.10.0.2)...
+[*] Ejecutando: /ip firewall address-list remove [find list="IDS_BLACKLIST" address="10.10.0.3"]
+[OK] Readback: regla eliminada = True
+      Respuesta equipo: (vacio)
+[OK] IP 10.10.0.3 desbloqueada exitosamente.
+    GATE desbloqueado: PASS  (modo=real confirmado(eliminado)=True)
+    GATE tras_ping_restaurado: PASS  (recibidos=3/3 (rc=0, True) (esperado recibidos>0))
+      [evidencia] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\t5_tras_desbloqueo_ping.txt
+      [informe] C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML\docs\lab\informe_t5.json
+
+== GATES T5 ==
+  chr_ssh: PASS  (SSH+ver OK: ['uptime: 7m13s                      '])
+  reglas_drop: PASS  (forward=True input=True)
+  pre_ping: PASS  (recibidos=3/3 (rc=0, True))
+  bloqueo_confirmado: PASS  (flujos_procesados=2 estado=CONFIRMADO(readback))
+  post_ping_denegado: PASS  (recibidos=0/3 (rc=0, False) (esperado recibidos=0))
+  drop_forward_stats: PASS  (paquetes drop en forward = 3 (esperado >0 tras el ataque))
+  address_list_presente: PASS  (print terse: 0 D comment=Bloqueado automticamente por NIPS CatBoost - 2026-10-01 15:56:38 list=IDS_BLACKLIST address=10.10.0.3 creati)
+  desbloqueado: PASS  (modo=real confirmado(eliminado)=True)
+  tras_ping_restaurado: PASS  (recibidos=3/3 (rc=0, True) (esperado recibidos>0))
+
+[PASS] T5 superado: bloqueo real en RouterOS confirmado (readback) y diferencial de conectividad verificado.
+

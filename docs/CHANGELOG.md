@@ -7,11 +7,75 @@
 
 TAREAS IDS/IPS - ESTADO
 
-[17] O P2-LABORATORIO VIRTUAL + T5: KIT DISEÑADO, SIN EJECUTAR
-    - Se diseñó el laboratorio que replica la red de la universidad (aislado):
-      VirtualBox -> 2 redes host-only (idslab_wan 10.10.0.0/24, idslab_lan
-      10.10.1.0/24) + RouterOS CHR 7.23.7 (ether1 10.10.0.2 / ether2 10.10.1.2)
-      + Alpine atacante 10.10.0.50 + víctima 10.10.1.50.
+[19] DEMO EN VIVO DEL BLOQUEO: 5/5 VEREDICTOS + FIGURA Y GIF
+    - _lab/demo_bloqueo.py convierte el T5 de gates en algo grutable: dos pings
+      continuos a 1 Hz más el muestreo del contador del router, en seis etapas
+      (libre -> deteccion -> bloqueado -> desbloqueo -> restaurado -> cierre).
+      Correr completo: 5/5 veredictos, exit 0.
+    - Las tres señales en pantalla: atacante->victima (el tráfico que se corta),
+      victima->ROUTER como control, y el contador IDS_BLACKLIST_DROP_FORWARD.
+      Un corte por caída de red no haría subir ese contador: es lo que convierte
+      la demo en evidencia y no en un anecdote de consola.
+    - El control NO puede salir del atacante: bloquear_ip_mikrotik crea también
+      una regla chain=input, así que al bloquear se le corta contra el router.
+      Documentado para que nadie 'arregle' el ping de control en esa dirección.
+    - _lab/graficar_bloqueo.py genera fig_bloqueo_timeline.png y
+      demo_bloqueo.gif desde el CSV. Sin ffmpeg ni OBS en la máquina, el MP4 se
+      graba con la Xbox Game Bar (Win+Alt+R); para el GIF basta PillowWriter.
+      El PNG y el GIF salen solo del CSV: si la figura contradijera al CSV, el
+      bug es del graficador, no del laboratorio.
+    - Bugs reales encontrados grabando, que ninguna prueba de gates detecta:
+      (1) deadlock: _fase() tomaba el candado y llamaba a _registrar() dentro,
+      que lo vuelve a tomar; un Lock no es reentrante y colgaba en la etapa 1.
+      Se cambió a RLock.
+      (2) El ping de RouterOS tiene dos formatos y el de timeout OMITE size y
+      TTL ('    1 10.10.1.3                    timeout'). El regex los exigía, así
+      que ninguna línea de timeout casaba, los paquetes se perdían en silencio y
+      BLOQUEADO salía 0/0 con el bloqueo funcionando. Verificado contra las
+      líneas reales capturadas con el bloqueo puesto.
+      (3) pd.read_csv de 7.8 MB + iterrows() en vivo mantienen el GIL ocupado y
+      congelaba los hilos de ping justo en la etapa clave: el lote D2 se carga
+      ahora antes de arrancar los medidores.
+      (4) twinx() por fotograma acumulaba cientos de ejes vivos en el GIF y lo
+      hacía tardar minutos; el eje secundario se crea una vez.
+      (5) Salida de dos hilos entrecortada: colorama parte la escritura al
+      quitar ANSI. Cada línea se imprime bajo candado y con flush=True.
+      (6) Los paquetes ya en vuelo al aplicar la regla podían responder y hacer
+      fallar la etapa BLOQUEADO; se cuentan aparte como '(en vuelo)'.
+    - Docs: docs/lab/demo-bloqueo.md (guía, tabla de veredictos y las notas
+      técnicas anteriores, para que el próximo no vuelva a tropezar).
+
+[18] O P2-LABORATORIO VIRTUAL + T5: EJECUTADO Y APROBADO 9/9
+    - La instalación del laboratorio se rehízo sobre TRES nodos RouterOS CHR
+      7.23.7 en lugar de Alpine (no superable aquí: falta linux-lts, el repo
+      local no es firmable y confirm_erase es interactivo). Topología final:
+      host 10.10.0.1 / 10.10.1.1; router CHR-IDS-LAB ether1 10.10.0.2 y
+      ether2 10.10.1.2; atacante CHR-ATACANTE-LAB 10.10.0.3 (una sola NIC);
+      víctima CHR-VICTIMA-LAB 10.10.1.3 en ether2 con ether1 deshabilitada.
+    - _lab/provision_chr.ps1 crea gold image y discos independientes por clon,
+      apaga el DHCP de VirtualBox en ambas redes host-only (topología 100 %
+      estática) y configura los clones en serie con el router apagado.
+    - _lab/chr_apply_config.py aplica la config por SSH en dos fases sobre cada
+      clon (entrada por la IP de bootstrap -> IP final -> retirada del
+      bootstrap) e identifica la interfaz destino en runtime, porque RouterOS
+      nombra ether1/ether2 según cuántas NICs vea.
+    - MACs: los clones NECESITAN las MACs del router (08:00:27:49:7F:9C y
+      08:00:27:D2:A1:09) o RouterOS no reconoce ether1/ether2 y quedan
+      inalcanzables sin consola. RouterOS 7 rechaza 'bad parameter' al
+      escribirlas por CLI, así que el duplicado es definitivo. Se midió en vez
+      de suponer: 30 pings host->atacante y 30 atacante->router con las tres
+      VMs encendidas dieron 0 % de pérdida.
+    - _lab/verificar_lab.py: 13/13 comprobaciones OK (SSH, IPs, reglas de drop,
+      camino atacante->router->víctima y atacante sin ruta a la LAN).
+    - T5: 9/9 gates PASS, exit 0. Detección D2 por la ruta de producción ->
+      address-list IDS_BLACKLIST confirmado por readback -> 3 paquetes contados
+      en la regla forward -> atacante a 0/3 -> desbloqueo confirmado y
+      conectividad restaurada a 3/3. Evidencias y consola en docs/lab/.
+    - Cumplido el requisito previo: paramiko instalado en esta máquina.
+
+[17] O P2-LABORATORIO VIRTUAL + T5: KIT DISEÑADO, SIN EJECUTAR (SUPERADO POR [18])
+    - Ver [18]: el laboratorio se acabó montando y ejecutando sobre tres CHR, y
+      la variante Alpine se descartó por bloqueo durante la instalación.
     - Kit portable en _lab/: provision_chr.ps1, provision_alpine.ps1,
       chr_bootstrap_console.txt, chr_apply_config.py, t5_routeros_ips.py,
       LEEME_LAB.md. Incluye la prueba T5 (detección D2 por la ruta de
@@ -20,9 +84,9 @@ TAREAS IDS/IPS - ESTADO
     - Código: ids.py ahora expone modo_ips_autonomo por entorno
       (IDS_IPS_AUTONOMO=1; default False). config/mikrotik_lab.json.example
       (gitignored el archivo real).
-    - DECISIÓN DEL USUARIO: NO se ejecuta en esta máquina (sin capacidad 3 VMs);
-      se ejecutará en la máquina objetivo siguiendo LEEME_LAB.md. Requisito
-      previo en dicha máquina: pip install paramiko.
+    - DECISIÓN DEL USUARIO (vigente al redactar [17], luego superada por la
+      ejecución real de [18]): no se ejecutaba en esta máquina; requisito
+      previo allí, `pip install paramiko`.
 
 [13] ✔ P1-CREDENCIALES FUERA DEL CÓDIGO (mikrotik_api.py + config/)
     - Resolución en cascada: env vars (MIKROTIK_IP/USER/PASS/PORT/

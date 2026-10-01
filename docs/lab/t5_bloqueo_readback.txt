@@ -1,0 +1,5 @@
+comando:
+/ip firewall address-list add list="IDS_BLACKLIST" address=10.10.0.3 timeout=24h comment="Bloqueado automáticamente por NIPS CatBoost - 2026-10-01 15:59:35"
+
+respuesta equipo:
+0 D comment=Bloqueado automticamente por NIPS CatBoost - 2026-10-01 15:59:35 list=IDS_BLACKLIST address=10.10.0.3 creation-time=2026-10-01 20:59:44 timeout=23h59m59s dynamic=yes

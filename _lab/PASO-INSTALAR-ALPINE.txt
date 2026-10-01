@@ -1,0 +1,112 @@
+=============================================================================
+INSTALACION DE ALPINE EN LAS VMs DEL LAB
+Universidad UNIPAZ - Proyecto IDS/IPS (Fase III)
+=============================================================================
+
+REGLA DE ORO: EN LA CONSOLA DE LA VM HAY QUE TECLEAR, NO PEGAR
+  No se puede pegar (click derecho > Paste) porque la ISO live de Alpine no
+  tiene Guest Additions, y el portapapeles compartido de VirtualBox depende de
+  ese servicio. Ademas la consola emulada se come teclas: una linea larga se
+  teclea con caracteres perdidos (/mnt quedo /mt, 'cont' quedo 'cont').
+  Regla: lineas cortas, en trozos de 10-15 caracteres, con una pausa de un
+  segundo entre trozo y trozo. SIEMPRE leer la linea completa en pantalla
+  antes de apretar Enter.
+
+=============================================================================
+QUE HAY QUE SABER ANTES DE EMPEZAR
+=============================================================================
+
+* Las ISO de Alpine 3.24 (virt y standard) traen solo 95 paquetes de base: NO
+  incluyen ni el kernel (linux-lts) ni el bootloader (syslinux). Por eso, para
+  instalar al disco hace falta INTERNET en esta fase: el instalador baja esas
+  dos cosas del CDN de Alpine.
+
+* Por eso cada VM lleva una segunda tarjeta en NAT, que es TEMPORAL. Al
+  terminar de instalar se quita y el lab queda aislado (host-only solamente):
+
+      VBoxManage modifyvm ATACANTE-IDS --nic2 none
+      VBoxManage modifyvm VICTIMA-IDS  --nic2 none
+
+* El instalador NO pide nada por teclado y al final APAGA la VM (no reinicia:
+  con la ISO live como primer disco, un reboot volveria a la ISO y no al disco
+  recien instalado). Que se apague sola es la senal de que termino bien.
+
+* REGLA DE TECLEO: la consola de la VM se come teclas. Escriba en trozos de
+  10-15 caracteres, con una pausa de un segundo entre trozo y trozo, y lea la
+  linea completa en pantalla antes de apretar Enter.
+
+=============================================================================
+VM 1 - ATACANTE-IDS   (10.10.0.50, gateway 10.10.0.2 = CHR)
+=============================================================================
+
+[1] Doble clic en ATACANTE-IDS y espere "localhost login:" -> root -> Enter
+
+[2] Monte la ISO de herramientas (puede estar ya montada en /mnt):
+
+        mount /dev/sr1 /mnt
+
+    Si el DVD no fuera sr1, pruebe con sr0 o sr2:   ls /dev/sr?
+
+[3] Vea que la ISO tiene el lanzador:
+
+        ls /mnt
+
+[4] Ejecute el instalador (sin argumentos: la IP ya viene dentro):
+
+        sh /mnt/GO
+
+[5] Espere 3-5 minutos (1/6 ... 6/6) y la VM se apaga sola. No toque nada.
+
+=============================================================================
+VM 2 - VICTIMA-IDS    (10.10.1.50, gateway 10.10.1.2 = CHR)
+=============================================================================
+
+Exactamente los mismos pasos [1] a [5].
+
+=============================================================================
+DESPUES, EN ESTA MAQUINA (lo hace el operador, no la VM)
+=============================================================================
+
+Como la ISO queda puesta, al reiniciar la VM volveria a arrancar la ISO live
+y no el disco instalado. Por eso, despues de que las dos VMs hayan apagado
+solas:
+
+    VBoxManage modifyvm <VM> --nic2 none
+    VBoxManage storageattach <VM> --storagectl IDE --port 0 --device 0 \
+        --medium none
+    VBoxManage storageattach <VM> --storagectl IDE --port 1 --device 0 \
+        --medium none
+    VBoxManage modifyvm <VM> --boot1 disk --boot2 dvd
+    VBoxManage startvm <VM>
+
+Verificacion:  ssh root@10.10.0.50   y   ssh root@10.10.1.50  (password: lab)
+
+=============================================================================
+SI ALGO FALLA
+=============================================================================
+
+* "can't open '/mt/INSTALL.SH'" o "no such file or directory"
+  Se perdio una tecla al teclear. No reinicie nada: vuelva a escribir el
+  comando por partes. Use Ctrl+C para limpiar la linea.
+
+* "[X] Sin internet no se puede instalar"
+  La VM no tiene la tarjeta NAT, o el host no tiene internet. Desde Windows:
+      VBoxManage modifyvm <VM> --nic2 nat --nictype2 82540EM
+  y repita. El instalador es idempotente: se puede repetir.
+
+* "mount: /dev/sr1: special device /dev/sr1 does not exist"
+  El live ISO no ve todavia el segundo DVD. Use:  ls /dev/sr?
+  y monte el que corresponda (sr0/sr1/sr2).
+
+* "ls /mnt" no muestra GO
+  Esta montada la ISO de Alpine en vez de la de herramientas. Monte la otra:
+  umount /mnt ; mount /dev/sr1 /mnt ; ls /mnt
+
+* Se queda en "3/6 Instalando Alpine..." mas de 10 minutos
+  Espere: esta bajando el kernel y el bootloader del CDN.
+
+* Al encender vuelve a la ISO live en vez de arrancar del disco
+  Es lo esperado si todavia no se hizo el bloque "DESPUES" de arriba.
+
+* El instalador se puede repetir sin miedo: borra y reinstala el sistema.
+=============================================================================

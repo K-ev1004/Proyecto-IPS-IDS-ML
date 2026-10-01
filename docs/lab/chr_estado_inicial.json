@@ -1,0 +1,11 @@
+{
+  "host": "10.10.0.2",
+  "salidas": {
+    "identidad": "name:CHR-IDS-LAB",
+    "version": "uptime: 2h23m32s version: 7.23.7 (long-term) build-time: 2026-09-16 12:19:15 factory-software: 7.1 free-memory: 292.3MiB total-memory: 512.0MiB cpu: Intel(R) cpu-count: 1 cpu-frequency: 3187MHz cpu-load: 2% free-hdd-space: 69.2MiB total-hdd-space: 89.2MiB write-sect-since-reboot: 3240 write-sect-total: 3240 architecture-name: x86_64 board-name: CHR innotek GmbH VirtualBox platform: MikroTik",
+    "interfaces": "0 address=10.10.0.2/24 network=10.10.0.0 interface=ether1 actual-interface=ether1 vrf=main 1 address=10.10.1.2/24 network=10.10.1.0 interface=ether2 actual-interface=ether2 vrf=main",
+    "filtro": "0 comment=IDS_BLACKLIST_DROP_FORWARD chain=forward action=drop src-address-list=IDS_BLACKLIST 1 comment=IDS_BLACKLIST_DROP_INPUT chain=input action=drop src-address-list=IDS_BLACKLIST",
+    "listas": "",
+    "servicio_ssh": "Flags: D - DYNAMIC; X - DISABLED, I - INVALID; c - CONNECTION Columns: NAME, PORT, PROTO, CERTIFICATE, VRF, MAX-SESSIONS, LOCAL # NAME PORT PROTO CERTIFICATE VRF MA LOCAL 0 ftp 21 tcp main 20 1 ssh 22 tcp main 20 2 D c ssh 22 tcp 10.10.0.2 3 telnet 23 tcp main 20 4 D dhcp 67 udp 5 D dhcpclient 68 udp 6 www 80 tcp main 20 7 X www-ssl 443 tcp none main 20 8 reverse-proxy 443 tcp none main 20 9 D btest 2000 tcp 10 D discover 5678 udp 11 winbox 8291 tcp main 20 12 api 8728 tcp main 20 13 api-ssl 8729 tcp none main 20"
+  }
+}

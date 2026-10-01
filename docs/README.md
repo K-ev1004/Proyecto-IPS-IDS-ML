@@ -6,7 +6,7 @@ Documentación organizada según el modelo **Diátaxis** (cuatro necesidades del
 |---|---|
 | **Tutorials** (aprender paso a paso) | [Guía de instalación](./guias/instalacion.md) |
 | **How-to guides** (resolver tareas) | [Guía de uso](./guias/uso.md) · [Guía de entrenamiento](./guias/entrenamiento.md) |
-| **Reference** (información técnica) | [README raíz](../README.md) · [ADRs](./adr/) · [ML](./ml/) |
+| **Reference** (información técnica) | [README raíz](../README.md) · [ADRs](./adr/) · [ML](./ml/) · [Lab](./lab/) |
 | **Explanation** (cómo y por qué) | [Red UNIPAZ](./red/) · [Tesis](./tesis/) · [Académico](./academico/) |
 
 ## Estructura
@@ -27,6 +27,10 @@ docs/
 ├── ml/                        # Análisis ML (histórico y vigente)
 │   ├── analisis-modelo-ids.md
 │   └── viabilidad-datasets.md
+├── lab/                       # Laboratorio virtual (prueba T5, evidencia)
+│   ├── README.md              # Índice de evidencias y gates
+│   ├── topologia-lab.md       # Topología, IPs y reglas del CHR
+│   └── plantilla_informe_t5.json
 ├── red/                       # Topología y despliegue en UNIPAZ
 │   └── arquitectura-red-unipaz.md
 └── tesis/                     # Anteproyecto y capítulos académicos
