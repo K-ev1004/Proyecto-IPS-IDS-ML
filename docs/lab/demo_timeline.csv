@@ -1,0 +1,61 @@
+t_rel,t_fmt,fase,evento,ok,detalle
+0.0,[00:00],precheck,inicio,,demo launched
+1.95,[00:01],inicio,contador_drop,,packets=0
+1.96,[00:01],LIBRE,fase,,1 · LIBRE  (el atacante SI llega a la victima)
+2.96,[00:02],LIBRE,ping_atacante->victima_ok,1,seq=0 rtt=0.23ms
+2.96,[00:02],LIBRE,ping_victima->ROUTER_ok,1,seq=0 rtt=0.12ms
+3.3,[00:03],LIBRE,contador_drop,,packets=0
+3.98,[00:03],LIBRE,ping_victima->ROUTER_ok,1,seq=1 rtt=0.26ms
+3.98,[00:03],LIBRE,ping_atacante->victima_ok,1,seq=1 rtt=0.58ms
+4.66,[00:04],LIBRE,contador_drop,,packets=0
+4.98,[00:04],LIBRE,ping_atacante->victima_ok,1,seq=2 rtt=0.60ms
+4.98,[00:04],LIBRE,ping_victima->ROUTER_ok,1,seq=2 rtt=0.44ms
+5.99,[00:05],LIBRE,ping_victima->ROUTER_ok,1,seq=3 rtt=0.23ms
+5.99,[00:05],LIBRE,ping_atacante->victima_ok,1,seq=3 rtt=0.39ms
+6.01,[00:06],LIBRE,contador_drop,,packets=0
+6.96,[00:06],DETECCION,fase,,2 · DETECCION + BLOQUEO AUTONOMO  (ruta de produccion)
+7.0,[00:06],DETECCION,ping_victima->ROUTER_ok,1,seq=4 rtt=0.27ms
+7.0,[00:06],DETECCION,ping_atacante->victima_ok,1,seq=4 rtt=0.31ms
+7.54,[00:07],DETECCION,contador_drop,,packets=0
+7.55,[00:07],DETECCION,deteccion,1,flujos=2 estado=CONFIRMADO
+7.55,[00:07],BLOQUEADO,fase,,3 · BLOQUEADO  (el atacante YA NO llega a la victima)
+8.0,[00:08],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=5 rtt=0.26ms
+8.89,[00:08],BLOQUEADO,contador_drop,,packets=1
+9.01,[00:09],BLOQUEADO,ping_atacante->victima_ok,1,seq=5 rtt=0.58ms
+9.01,[00:09],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=6 rtt=0.21ms
+9.97,[00:09],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=7 rtt=0.83ms
+9.97,[00:09],BLOQUEADO,ping_atacante->victima_timeout,0,seq=6 TIMEOUT
+10.22,[00:10],BLOQUEADO,contador_drop,,packets=3
+10.97,[00:10],BLOQUEADO,ping_atacante->victima_timeout,0,seq=7 TIMEOUT
+10.97,[00:10],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=8 rtt=0.19ms
+11.56,[00:11],BLOQUEADO,contador_drop,,packets=4
+11.99,[00:11],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=9 rtt=0.19ms
+11.99,[00:11],BLOQUEADO,ping_atacante->victima_timeout,0,seq=8 TIMEOUT
+12.9,[00:12],BLOQUEADO,contador_drop,,packets=5
+13.0,[00:12],BLOQUEADO,ping_atacante->victima_timeout,0,seq=9 TIMEOUT
+13.0,[00:12],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=10 rtt=0.22ms
+14.0,[00:14],BLOQUEADO,ping_atacante->victima_timeout,0,seq=10 TIMEOUT
+14.0,[00:14],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=11 rtt=0.19ms
+14.24,[00:14],BLOQUEADO,contador_drop,,packets=7
+15.02,[00:15],BLOQUEADO,ping_victima->ROUTER_ok,1,seq=12 rtt=0.22ms
+15.02,[00:15],BLOQUEADO,ping_atacante->victima_timeout,0,seq=11 TIMEOUT
+15.55,[00:15],DESBLOQUEO,fase,,4 · DESBLOQUEO
+15.76,[00:15],DESBLOQUEO,contador_drop,,packets=8
+15.89,[00:15],DESBLOQUEO,desbloqueo,1,modo=real confirmado=True
+15.89,[00:15],RESTAURADO,fase,,5 · RESTAURADO  (la victima vuelve a responder)
+15.97,[00:15],RESTAURADO,ping_atacante->victima_timeout,0,seq=12 TIMEOUT
+16.02,[00:16],RESTAURADO,ping_victima->ROUTER_ok,1,seq=13 rtt=0.18ms
+16.99,[00:16],RESTAURADO,ping_victima->ROUTER_ok,1,seq=14 rtt=0.17ms
+16.99,[00:16],RESTAURADO,ping_atacante->victima_timeout,0,seq=13 TIMEOUT
+16.99,[00:16],RESTAURADO,ping_atacante->victima_timeout,0,seq=14 TIMEOUT
+17.1,[00:17],RESTAURADO,contador_drop,,packets=9
+18.0,[00:17],RESTAURADO,ping_atacante->victima_ok,1,seq=15 rtt=0.27ms
+18.0,[00:17],RESTAURADO,ping_victima->ROUTER_ok,1,seq=15 rtt=0.10ms
+18.44,[00:18],RESTAURADO,contador_drop,,packets=9
+19.0,[00:18],RESTAURADO,ping_atacante->victima_ok,1,seq=16 rtt=0.46ms
+19.0,[00:19],RESTAURADO,ping_victima->ROUTER_ok,1,seq=16 rtt=0.16ms
+19.79,[00:19],RESTAURADO,contador_drop,,packets=9
+19.9,[00:19],RESTAURADO,ping_atacante->victima_ok,1,seq=17 rtt=0.47ms
+19.92,[00:19],RESTAURADO,ping_victima->ROUTER_ok,1,seq=17 rtt=0.20ms
+20.49,[00:20],RESTAURADO,resumen,1,el atacante llegaba a la victima antes=True; dejo de llegar mientras estaba bloqueado=True; volvio a llegar tras desbloquear=True; la red seguia viva (control victima->router)=True; el router conto los descartes (max 9)=True
+20.49,[00:20],CIERRE,fase,,6 · CIERRE

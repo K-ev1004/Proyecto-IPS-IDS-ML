@@ -22,7 +22,7 @@ venv/
 env/
 .venv/
 
-# Credenciales/configuración MikroTik por perfil (no versionar credenciales)
+# Credenciales/configuraciÃ³n MikroTik por perfil (no versionar credenciales)
 config/mikrotik_lab.json
 config/mikrotik_prod.json
 config/mikrotik_*.json
@@ -52,7 +52,58 @@ Dataset_Limpio/
 *.npy
 *.csv
 
-# Ignorar todos los modelos de entrenamiento salvo el modelo de PRODUCCIÓN:
+# ---------------------------------------------------------------------------
+# Excepciones explicitas de EVIDENCIA (commit [20]).
+# Las reglas globales '*.csv' y '*.log' de arriba son demasiado amplias: ocultan
+# evidencia de la tesis que SI debe estar en Git. Cada excepcion se declara aqui
+# con su motivo para que un 'git clean' no vuelva a perderla.
+# ---------------------------------------------------------------------------
+
+# CSV fuente de verdad de la demo: sin el, el PNG y el GIF de docs/lab/ no son
+# reproducibles ni auditables. Se genera con _lab/graficar_bloqueo.py.
+!docs/lab/demo_timeline.csv
+
+# Resumen estadistico agregado de intrusiones.db (585 ataques, 113 bloqueos).
+# El .db completo NO se versiona: contiene IPs publicas de terceros.
+# Ver docs/informe_privacidad_ips.md.
+!docs/lab/intrusiones_resumen.json
+
+# Resumen agregado de logs_bloqueos.log y de los logs semanales (113 lineas de
+# bloqueo, conteos por tipo y por clase de IP, sin direcciones).
+!docs/lab/bloqueos_resumen.json
+
+# Dataset externo D2 (Zenodo 6907252, particion SQLi, 57,229 flujos NetFlow).
+# Lo leen demo_bloqueo.py:520, t5_routeros_ips.py:212, test_masivo.py:154 y 209,
+# entrenar_sqli_guard.py:41 y graficar_curva_sqli_guard.py:31. Sin el no hay
+# reproduccion de la T5 ni de las metricas de SQLiGuard. Pesa 7.5 MB.
+# Git no permite re-incluir un archivo si su directorio padre esta excluido
+# (regla 'datasets/' de la linea 10), asi que hay que reabrir la cadena.
+!datasets/
+datasets/*
+!datasets/SQLi_Zenodo/
+datasets/SQLi_Zenodo/*
+!datasets/SQLi_Zenodo/D2_test.csv
+
+# Linea base de trafico previo a la prueba (150 muestras, sin IPs).
+!Captura_Linea_Base/captura_volumen_0911.csv
+
+# Logs de bloqueo y logs semanales: NO se versionan.
+#
+# logs_bloqueos.log y los 3 logs semanales con contenido incluyen IPs publicas
+# de terceros (149.154.166.110 Telegram x18, 8.8.8.8 Google DNS x14, rangos
+# Akamai/AWS). Publicarlos seria el mismo problema que motiva a no subir
+# intrusiones.db: los .log son ese mismo dato en texto plano, con los mismos
+# 113 bloqueos y las mismas 13 IPs de origen. En su lugar se publica
+# docs/lab/bloqueos_resumen.json con los conteos y sin direcciones.
+#
+# Los .sha256 de este directorio SI siguen versionados y conservan la constancia
+# del sellado semanal, aunque sin el .log no pueden verificarse tras un clon.
+# OJO: contienen sumas SHA-512 pese a la extension (log_exporter.py:173), asi
+# que se verifican con sha512sum. Localmente los sellos de las semanas
+# 2026-09-04, 2026-09-15 y 2026-09-24 SI verifican; el de 2026-08-25 NO, porque
+# el .log cambio despues de ser sellado.
+
+# Ignorar todos los modelos de entrenamiento salvo el modelo de PRODUCCIÃ“N:
 # multiclase v5 + detector SQLiGuard. Se suben mediante Git LFS
 # (pipeline_catboost_v5.pkl pesa ~125 MB, supera el limite de 100 MB de GitHub).
 Modelos_Entrenados/*

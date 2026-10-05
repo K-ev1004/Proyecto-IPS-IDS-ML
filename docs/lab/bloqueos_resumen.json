@@ -1,0 +1,98 @@
+{
+  "_documento": "Resumen agregado de logs_bloqueos.log y de los logs semanales de logs_ciberseguridad/. Contiene conteos; NO contiene direcciones IP. Los .log no se versionan por incluir IPs publicas de terceros.",
+  "logs_bloqueos": {
+    "archivo_local": "logs_bloqueos.log",
+    "tamano_bytes": 11019,
+    "sha512": "bcf8bad7066101c32418d7be1553b6eedbdf1d75be0025510e32461940c4d60f83da669386134ebcfd6b72ce85187d5776729b02794e1f293a37b2ccd32422e5",
+    "lineas_registro": 113,
+    "rango_temporal": {
+      "desde": "2026-08-21 09:08:23",
+      "hasta": "2026-08-21 10:00:24"
+    },
+    "por_accion": {
+      "Escaneo de Puertos": 103,
+      "DDoS Distribuido": 7,
+      "Inyeccion SQL": 3
+    },
+    "ips_origen_unicas": 13,
+    "menciones_ip": 113,
+    "clase_ip_origen": {
+      "publica": 37,
+      "privada": 76
+    },
+    "ips_origen_unicas_por_clase": {
+      "privada": 6,
+      "publica": 7
+    }
+  },
+  "logs_semanales": {
+    "logsciberseguridad 2026-08-14 al 2026-08-21.log": {
+      "archivo_local": "logsciberseguridad 2026-08-14 al 2026-08-21.log",
+      "tamano_bytes": 248,
+      "sha512_contenido": "ffef51fa41ea7b7fee226a5a27642c8ff130af59beb25f30d6d1f17f30e1f14c02a23f2b85aa4846bb1d29511977ffa46a6c4c5589932b1f81597793b2d2ca45",
+      "lineas_registro": 0,
+      "por_tipo": {},
+      "menciones_ip": 0,
+      "clase_ip_origen": {},
+      "sello_sha512_declarado": null,
+      "sello_verifica": null
+    },
+    "logsciberseguridad 2026-08-25 al 2026-09-01.log": {
+      "archivo_local": "logsciberseguridad 2026-08-25 al 2026-09-01.log",
+      "tamano_bytes": 40317,
+      "sha512_contenido": "f8bbf0061d0d03121ef56188f07313ff53d638e70a1bf425eac04df1315aa607df5a4d793dfab22f77db4490e5717f2d86dd4e8b97b699ee9342158a2935130f",
+      "lineas_registro": 251,
+      "por_tipo": {
+        "Escaneo de Puertos": 250,
+        "SYN Flood": 1
+      },
+      "menciones_ip": 251,
+      "clase_ip_origen": {
+        "privada": 205,
+        "publica": 46
+      },
+      "sello_sha512_declarado": "e1daaefc18ce8d81c750df2cd3668360dbf7c5fb37b66c2e4c70020da172bcc96f32051567f16d323dc60549a32bb69dfd650765f13086def6a4751a9e9b3e76",
+      "sello_verifica": false
+    },
+    "logsciberseguridad 2026-09-04 al 2026-09-11.log": {
+      "archivo_local": "logsciberseguridad 2026-09-04 al 2026-09-11.log",
+      "tamano_bytes": 248,
+      "sha512_contenido": "55d6ce691a0d95736e3f1e11b815409fc2bd9590a26b61d38fadc1b6bbbc3c442f055a256d4efc8b1119cc548ede7be381bc3f59a8fecee56cb783c806d082d4",
+      "lineas_registro": 0,
+      "por_tipo": {},
+      "menciones_ip": 0,
+      "clase_ip_origen": {},
+      "sello_sha512_declarado": "55d6ce691a0d95736e3f1e11b815409fc2bd9590a26b61d38fadc1b6bbbc3c442f055a256d4efc8b1119cc548ede7be381bc3f59a8fecee56cb783c806d082d4",
+      "sello_verifica": true
+    },
+    "logsciberseguridad 2026-09-15 al 2026-09-22.log": {
+      "archivo_local": "logsciberseguridad 2026-09-15 al 2026-09-22.log",
+      "tamano_bytes": 248,
+      "sha512_contenido": "5dcf6c229d77bbb7f336e9260668736503bb1153a19ba391859a6a36a934b6483a13cd6bd54d097df0713a066d275f367321a86e9786c2561b8676ea819c4383",
+      "lineas_registro": 0,
+      "por_tipo": {},
+      "menciones_ip": 0,
+      "clase_ip_origen": {},
+      "sello_sha512_declarado": "5dcf6c229d77bbb7f336e9260668736503bb1153a19ba391859a6a36a934b6483a13cd6bd54d097df0713a066d275f367321a86e9786c2561b8676ea819c4383",
+      "sello_verifica": true
+    },
+    "logsciberseguridad 2026-09-24 al 2026-10-01.log": {
+      "archivo_local": "logsciberseguridad 2026-09-24 al 2026-10-01.log",
+      "tamano_bytes": 248,
+      "sha512_contenido": "dcb51744c3cd309d90ccf3ba7a18b1490610031001efd712b1b8b7a8e342845a592fd2c3dd465ac8b7840adad4ecdc189d00db76e819cc7811917091c2c4f0ba",
+      "lineas_registro": 0,
+      "por_tipo": {},
+      "menciones_ip": 0,
+      "clase_ip_origen": {},
+      "sello_sha512_declarado": "dcb51744c3cd309d90ccf3ba7a18b1490610031001efd712b1b8b7a8e342845a592fd2c3dd465ac8b7840adad4ecdc189d00db76e819cc7811917091c2c4f0ba",
+      "sello_verifica": true
+    }
+  },
+  "integridad_sellos": {
+    "nota": "Los archivos .sha256 contienen sumas SHA-512 pese al nombre de la extension (log_exporter.py:173). Como los .log no se versionan, ninguno de los 9 sellos del repositorio puede verificarse tras un git clone.",
+    "sellos_totales_en_repo": 9,
+    "sellos_con_log_publicado": 0,
+    "contenido_published": false
+  },
+  "nota_integridad": "Los 113 registros de logs_bloqueos.log tienen el mismo origen y contenido que la tabla bloqueos de intrusiones.db: estado SIMULADO/SEMI con confirmado=0. Documentan el modo semi-autonomo, NO el bloqueo autonomo validado. La evidencia del bloqueo autonomo real esta en docs/lab/t5_routeros_ips.txt (gate bloqueo_confirmado) y en docs/lab/demo_timeline.csv."
+}

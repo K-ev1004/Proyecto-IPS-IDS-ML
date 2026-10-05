@@ -72,8 +72,73 @@ Se guarda en `C:\Users\<usuario>\Videos\Captures`.
 | `fig_bloqueo_timeline.png` | figura estática para la memoria |
 | `demo_bloqueo.gif` | animación para proyectar o insertar en un PPT |
 
+Los tres están versionados en el repositorio (commit `[20]`).
+
 El PNG y el GIF se generan **solo** desde el CSV. Si la figura contradijera al
 CSV, el bug estaría en `graficar_bloqueo.py`, no en el laboratorio.
+
+### Comprobación de reproducibilidad
+
+Como el CSV está versionado (commit `[20]`), la figura es verificable. Reejecutar
+`graficar_bloqueo.py` sobre el CSV del repositorio reproduce los archivos
+**byte a byte**:
+
+| Archivo | SHA-256 (prefijo) |
+|---|---|
+| `fig_bloqueo_timeline.png` | `CA580D24CC84BDCB54C7BA5F…` |
+| `demo_bloqueo.gif` | `B2FC0018A58B846E3C2F86EC…` |
+
+Si alguien clona el repo y corre el script, obtiene los mismos bytes. Eso
+convierte la figura en evidencia auditable y no en una captura de pantalla.
+
+## Trazabilidad de la evidencia
+
+Qué es fuente de verdad y qué es regenerable:
+
+| Artefacto | Papel | Versionado |
+|---|---|---|
+| `docs/lab/demo_timeline.csv` | **fuente de verdad** de la línea de tiempo | sí |
+| `docs/lab/fig_bloqueo_timeline.png` | derivado, reproducible al byte | sí |
+| `docs/lab/demo_bloqueo.gif` | derivado, reproducible al byte | sí |
+| `docs/lab/t5_routeros_ips.txt` | evidencia del gate de T5 (9/9) | sí |
+| `docs/lab/informe_t5.json` | los 9 gates con veredicto y detalle | sí |
+| `docs/lab/intrusiones_resumen.json` | agregado de `intrusiones.db`, sin IPs | sí |
+| `docs/lab/bloqueos_resumen.json` | agregado de los `.log`, sin IPs | sí |
+| `datasets/SQLi_Zenodo/D2_test.csv` | dataset externo que alimenta la detección | sí (7,5 MB) |
+| `Captura_Linea_Base/captura_volumen_0911.csv` | línea base de tráfico, 150 muestras | sí |
+| `logs_ciberseguridad/*.sha256` | sellos semanales, sin el `.log` adjunto | sí (9) |
+| `intrusiones.db` | base local con IPs de terceros | **no** |
+| `logs_ciberseguridad/*.log` | mismos datos que el `.db`, en texto plano | **no** |
+
+Tres salvedades que conviene no ocultar al leer la tabla:
+
+1. **Los `.sha256` contienen SHA-512**, no SHA-256, pese al nombre de la
+   extensión: así lo produce `log_exporter.py:173`. Verifican con `sha512sum`.
+   Como los `.log` no se publican, **ninguno de los 9 sellos puede verificarse
+   tras un `git clone`**: quedan como constancia del sellado, no como prueba
+   verificable por un tercero. Localmente, los de las semanas `2026-09-04`,
+   `2026-09-15` y `2026-09-24` sí verifican; el de `2026-08-25` no, porque el
+   `.log` cambió después de ser sellado; los otros 5 corresponden a `.log` que ya
+   no existen en la máquina.
+2. **No se publica `logs_bloqueos.log` aunque sea la evidencia más legible.**
+   Contiene las mismas 13 IPs de origen y los mismos 113 bloqueos que
+   `intrusiones.db`, en texto plano: `149.154.166.110` (Telegram) ×18 y
+   `8.8.8.8` (Google DNS) ×14 entre otras. Publicarlo por la vía del `.log`
+   anularía la razón por la que el `.db` queda fuera. Los conteos están en
+   `bloqueos_resumen.json`.
+3. **`informe_test_masivo.json` (bloque `T4`) declara como prueba un
+   `logs_bloqueos.log` en `C:\Users\rojas\AppData\Local\Temp\ids_logs_test_*`,
+   carpeta que ya no existe.** Ninguna de las copias de `logs_bloqueos.log`
+   disponible es ese archivo. La evidencia del bloqueo autónomo real es
+   `t5_routeros_ips.txt` y `demo_timeline.csv`, no ese log.
+
+Los CSV de evidencia llevan `-text` en `.gitattributes`. Con
+`core.autocrlf=true`, Git normalizaría los saltos de línea y los hashes dejarían
+de coincidir.
+
+Sobre qué datos no se publican y por qué, ver
+[`docs/informe_privacidad_ips.md`](../informe_privacidad_ips.md).
+
 
 ## Veredictos de la corrida
 

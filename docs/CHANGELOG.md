@@ -45,6 +45,64 @@ TAREAS IDS/IPS - ESTADO
     - Docs: docs/lab/demo-bloqueo.md (guía, tabla de veredictos y las notas
       técnicas anteriores, para que el próximo no vuelva a tropezar).
 
+[20] EVIDENCIA VERSIONADA: CSV TIMELINE, DATASET D2 Y RESUMENES AGREGADOS
+     - Motivo: la evidencia que sostiene el resultado de [18] y [19] estaba en
+       gran parte fuera de Git. El PNG y el GIF se publicaban sin su CSV fuente,
+       y el dataset que alimenta la deteccion no estaba en el repo, de modo que
+       ni la figura ni las metricas eran reproducibles desde un clon.
+     - Se versionan (7 archivos, 57.494 lineas):
+         docs/lab/demo_timeline.csv                    3,9 KB   fuente de verdad
+         docs/lab/intrusiones_resumen.json             2,8 KB   nuevo
+         docs/lab/bloqueos_resumen.json                4,8 KB   nuevo
+         datasets/SQLi_Zenodo/D2_test.csv              7,5 MB   57.229 flujos
+         Captura_Linea_Base/captura_volumen_0911.csv   7,7 KB   150 muestras
+     - Reproducibilidad comprobada: al reejecutar graficar_bloqueo.py sobre el CSV
+       versionado, el PNG y el GIF salen byte-identicos (SHA-256 CA580D24... y
+       B2FC0018...). La figura es evidencia auditable, no una captura.
+     - DECISION DE PRIVACIDAD, y una casi se nos escapa: logs_bloqueos.log se
+       iba a publicar como evidencia de bloqueos, pero al revisarlo resulto ser
+       el MISMO dato que intrusiones.db en texto plano: 113 bloqueos, 13 IPs de
+       origen, con 149.154.166.110 (Telegram) x18 y 8.8.8.8 (Google DNS) x14.
+       Subirlo habria annulado por la puerta de atras la razon por la que el .db
+       queda fuera. Los 3 logs semanales con contenido tenian el mismo problema.
+       Se sustituyen por bloqueos_resumen.json, que publica los conteos
+       (103/7/3 por familia, 76 privadas vs 37 publicas) sin escribir ninguna IP.
+     - NO se publica intrusiones.db: tiene IPs publicas de terceros. En su lugar,
+       intrusiones_resumen.json agrega 585 ataques y 113 bloqueos sin ninguna
+       IP, e incluye el SHA-512 del .db para que la transformacion sea auditable.
+       Los dos resúmenes coinciden exactamente entre si (mismos 113 bloqueos,
+       13 IPs, 76/37), lo que confirma que el .db y el .log son la misma fuente.
+     - Los 113 bloqueos estan todos en estado SIMULADO/SEMI con confirmado=0:
+       documentan el modo semi-autonomo, NO el bloqueo autonomo validado. La
+       evidencia del bloqueo real es t5_routeros_ips.txt y demo_timeline.csv.
+     - Los .sha256 de logs_cibersegui/ siguen versionados pero, al no publicar
+       los .log, NINGUNO de los 9 puede verificarse tras un git clone. Queda
+       escrito en vez de insinuar una integridad que ya no puede comprobarse.
+       Localmente verifican los de 2026-09-04, 2026-09-15 y 2026-09-24 (con
+       sha512sum); el de 2026-08-25 no, porque el .log cambio tras ser sellado.
+     - BUG DE INTEGRIDAD detectado y corregido: core.autocrlf=true hacia que Git
+       normalizara LF<->CRLF en los .log y los sellos dejarian de verificar tras
+       un clon. Se reprodujo (2 de 3 sellos FALLABAN contra el blob del indice) y
+       se corrigio con -text en .gitattributes y git add --renormalize. Sin
+       .gitattributes, la tabla de integridad habria sido falsa en GitHub.
+     - Hallazgo preexistente: evidencia/eventos_ids_*.csv ya publicados contienen
+       IPs de terceros (AWS, Akamai, Google). Se detectaron al aplicar el
+       criterio de privacidad; se decidió no reescribirlos para no alterar el
+       historial de un archivo ya publicado. Registrado en
+       docs/informe_privacidad_ips.md.
+     - Advertencia registrada: informe_test_masivo.json (bloque T4) declara como
+       prueba un logs_bloqueos.log en Temp\ids_logs_test_* que ya no existe.
+       Ninguna copia disponible de ese log es ese archivo.
+     - .gitignore: las reglas globales *.csv y *.log eran demasiado amplias y
+       ocultaban evidencia que si debe publicarse. Se anaden excepciones
+       explicitas, cada una con su motivo. datasets/ exige reabrir la cadena de
+       directorios: Git no re-incluye un archivo si su carpeta padre esta
+       excluida.
+     - Docs: seccion 'Trazabilidad de la evidencia' en docs/lab/demo-bloqueo.md,
+       indice de artefactos en docs/lab/README.md y nuevo
+       docs/informe_privacidad_ips.md.
+
+
 [18] O P2-LABORATORIO VIRTUAL + T5: EJECUTADO Y APROBADO 9/9
     - La instalación del laboratorio se rehízo sobre TRES nodos RouterOS CHR
       7.23.7 en lugar de Alpine (no superable aquí: falta linux-lts, el repo

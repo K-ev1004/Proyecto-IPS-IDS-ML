@@ -36,6 +36,29 @@ deteccion D2 (ruta de produccion) -> bloqueo autonomo por SSH -> readback CONFIR
 | Esquema esperado del informe | [plantilla_informe_t5.json](./plantilla_informe_t5.json) |
 | Evidencias generadas por T5 | esta carpeta (`t5_*.txt`, `informe_t5.json`) |
 | **Demo en vivo + figura + GIF** | [demo-bloqueo.md](./demo-bloqueo.md) |
+| Trazabilidad de la evidencia (qué es fuente de verdad) | [demo-bloqueo.md § Trazabilidad](./demo-bloqueo.md#trazabilidad-de-la-evidencia) |
+| Datos no publicados y motivo | [`docs/informe_privacidad_ips.md`](../informe_privacidad_ips.md) |
+
+## Evidencia versionada en el commit `[20]`
+
+Además de las nueve salidas de T5, el repositorio incluye:
+
+| Archivo | Qué aporta |
+|---|---|
+| `demo_timeline.csv` | línea de tiempo cruda de la demo; fuente de verdad de la figura |
+| `intrusiones_resumen.json` | agregado de `intrusiones.db` (585 ataques, 113 bloqueos) sin IPs |
+| `bloqueos_resumen.json` | agregado de `logs_bloqueos.log` y los logs semanales, sin IPs |
+| `fig_bloqueo_timeline.png` y `demo_bloqueo.gif` | derivados, reproducibles al byte desde el CSV |
+| `../../datasets/SQLi_Zenodo/D2_test.csv` | dataset externo (7,5 MB) que alimenta la detección |
+| `../../Captura_Linea_Base/captura_volumen_0911.csv` | línea base de tráfico, 150 muestras |
+
+Tres artefactos **no** se publican, y el motivo está en
+[`demo-bloqueo.md § Trazabilidad`](./demo-bloqueo.md#trazabilidad-de-la-evidencia)
+y en el informe de privacidad: `intrusiones.db` y los `.log` de
+`logs_ciberseguridad/` (contienen IPs públicas de terceros) y las credenciales del
+laboratorio. Los `.sha256` sí se publican, pero sin su `.log` adjunto ninguno
+puede verificarse tras un clon.
+
 
 ## Topología (resumen)
 

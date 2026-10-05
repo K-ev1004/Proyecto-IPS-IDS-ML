@@ -1,0 +1,73 @@
+{
+  "_documento": "Resumen estadistico de intrusiones.db. Contiene agregados y conteos; NO contiene direcciones IP. La base de datos completa no se versiona porque incluye IPs publicas de terceros.",
+  "_generado_por": "resumen desde intrusiones.db (agregacion, sin IPs)",
+  "origen": {
+    "archivo_local": "intrusiones.db",
+    "tamano_bytes": 94208,
+    "sha512": "c80efe403f82e38ad1255af59544906cabf41fcbc66dde8b7daf6668d79411267d7cd43ac4e8101cb1e9236f0ea1ee2d469f340b3f9a05d2f3674b3679dfde4c",
+    "nota": "El hash permite verificar que el .db local es el mismo del que se deriva este resumen. El .db no se incluye en el repositorio."
+  },
+  "ataques": {
+    "total": 585,
+    "rango_temporal": {
+      "desde": "Fri Aug 21 08:48:43 2026",
+      "hasta": "Wed Aug 26 11:43:49 2026"
+    },
+    "por_familia": {
+      "Escaneo de Puertos": 523,
+      "DDoS Distribuido": 30,
+      "Inyeccion SQL": 29,
+      "Posible Exploit": 2,
+      "SYN Flood": 1
+    },
+    "por_tipo_literal": {
+      "Escaneo de Puertos (Heurística)": 521,
+      "DDoS Distribuido (Heurística)": 30,
+      "Inyeccion_SQL (ML: 92.4%)": 20,
+      "Inyeccion_SQL (ML: 91.9%)": 2,
+      "Posible Exploit (Heuristica)": 2,
+      "Escaneo de Puertos (Heuristica)": 2,
+      "Inyeccion_SQL (ML: 70.6%)": 1,
+      "Inyeccion_SQL (ML: 63.5%)": 1,
+      "Inyeccion_SQL (ML: 94.6%)": 1,
+      "Inyeccion_SQL (ML: 97.9%)": 1,
+      "Inyeccion_SQL (ML: 86.5%)": 1,
+      "Inyeccion_SQL (ML: 90.4%)": 1,
+      "Inyeccion_SQL (ML: 97.7%)": 1,
+      "SYN Flood (Heurística)": 1
+    },
+    "clase_ip_origen": {
+      "privada": 374,
+      "publica": 211
+    },
+    "nota_grafias": "La tabla ataques contiene dos grafias de 'Heuristica': con y sin tilde. por_tipo_literal las conserva tal cual; por_familia las normaliza. La diferencia explica 521 vs 523 en Escaneo de Puertos."
+  },
+  "bloqueos": {
+    "total": 113,
+    "por_familia": {
+      "Escaneo de Puertos": 103,
+      "DDoS Distribuido": 7,
+      "Inyeccion SQL": 3
+    },
+    "por_estado": {
+      "SIMULADO/SEMI": 113
+    },
+    "por_confirmado": {
+      "0": 113
+    },
+    "ips_origen_unicas": 13,
+    "clase_ip_origen": {
+      "publica": 37,
+      "privada": 76
+    },
+    "duracion_min": {
+      "min": 24,
+      "max": 24
+    }
+  },
+  "nota_integridad": "ATENCION: los 113 registros de bloqueos estan todos en estado SIMULADO/SEMI con confirmado=0. Esta tabla documenta el modo semi-autonomo, NO el bloqueo autonomo validado. La evidencia del bloqueo autonomo real esta en docs/lab/t5_routeros_ips.txt (gate bloqueo_confirmado, readback CONFIRMADO) y en docs/lab/demo_timeline.csv.",
+  "metodo": {
+    "consultas": "agregacion en memoria sobre las tablas ataques y bloqueos",
+    "ips_publicas": "contadas y clasificadas, nunca escritas en este resumen"
+  }
+}

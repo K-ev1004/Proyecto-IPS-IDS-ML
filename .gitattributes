@@ -2,3 +2,31 @@
 # pipeline_catboost_v5.pkl pesa ~125 MB, por lo que requiere LFS.
 # Los .pkl ya rastreados como blobs normales (v2/v3/v4) no se modifican.
 Modelos_Entrenados/*.pkl filter=lfs diff=lfs merge=lfs -text
+
+# ---------------------------------------------------------------------------
+# Evidencia digital: bytes exactos (commit [20]).
+#
+# core.autocrlf=true en este repositorio. Sin '-text', Git normaliza LF<->CRLF
+# al guardar y al clonar, y el archivo deja de coincidir byte a byte con su
+# sello SHA-512. '-text' obliga a Git a tratarlos como binarios.
+#
+# Se comprobó el fallo antes de aplicar esto: con los .log sin '-text', 2 de 3
+# sellos fallaban al calcularse contra el blob del indice, que es lo que recibe
+# un 'git clone'. Corregido con '-text' mas 'git add --renormalize'.
+#
+# Nota: los .log de logs_ciberseguridad/ no se versionan (contienen IPs
+# publicas de terceros). La regla se deja para que, si se recupera uno del
+# respaldo, se mantenga byte-identico y su sello siga siendo verificable.
+# Ver docs/informe_privacidad_ips.md.
+# ---------------------------------------------------------------------------
+logs_ciberseguridad/*.log -text
+logs_ciberseguridad/*.sha256 -text
+
+# Dataset D2 (Zenodo 6907252). Se debe mantener byte-identico al original
+# para poder contrastar su hash contra el publicado por la fuente.
+datasets/SQLi_Zenodo/D2_test.csv -text
+
+# CSV de evidencia: byte-identicos para que sus sumas de comprobacion sirvan.
+docs/lab/demo_timeline.csv -text
+Captura_Linea_Base/captura_volumen_0911.csv -text
+evidencia/*.csv -text
