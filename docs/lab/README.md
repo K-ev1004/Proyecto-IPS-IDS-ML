@@ -122,7 +122,48 @@ no se registró ningún paquete. Se detectó ejecutando el parser directamente, 
 VMs, y quedó una comprobación que fija el comportamiento esperado.
 
 
+## Figuras del laboratorio
+
+Tres figuras para explicar el laboratorio, generadas por
+[`_lab/graficar_lab.py`](../../_lab/graficar_lab.py):
+
+| Figura | Para qué sirve |
+|---|---|
+| [`fig_topologia_lab.png`](fig_topologia_lab.png) | **Cómo está construido**: el host, las dos redes host-only, las tres VMs y por dónde pasa el tráfico |
+| [`fig_secuencia_demo.png`](fig_secuencia_demo.png) | **Cómo funciona** en una imagen: las cuatro fases sobre el tiempo real y los nueve gates de T5 debajo |
+| [`lab_secuencia.gif`](lab_secuencia.gif) | Lo mismo en movimiento, para proyectar o defender en vivo |
+
+```powershell
+python .\_lab\graficar_lab.py                        # las tres, desde la corrida de la raiz
+python .\_lab\graficar_lab.py --solo-png             # sin el GIF, que es lo que tarda
+python .\_lab\graficar_lab.py --csv docs\lab\corridas\corrida2\demo_timeline.csv `
+                                 --t5  docs\lab\corridas\corrida2\informe_t5.json
+```
+
+Las direcciones IP de `fig_topologia_lab.png` no están todas escritas a mano: las
+de atacante y víctima se leen de `nodos_lab.py`, y la del router de
+`config/mikrotik_lab.json`, así que si esas cambian la figura cambia con ellas.
+Las dos del host y la del LAN del router sí están fijas en el graficador, porque
+no están en ninguna configuración; se pueden sobrescribir con `MIKROTIK_IP` y
+`MIKROTIK_LAN_IP` si algún día se renumera la red.
+
+**De dónde salen los datos, y qué significan.** Las tres figuras se derivan de la
+evidencia ya registrada —el CSV de la demo y el `informe_t5.json`—, no de una
+corrida en vivo. Es justo lo que las hace defendibles: se regeneran cuando se
+quiera y están obligadas a coincidir con el CSV, así que si una figura
+contradicta a la evidencia sería un bug del graficador y no del laboratorio. En
+cambio **no son capturas del laboratorio funcionando**, y no deben presentarse
+como tal.
+
+`fig_bloqueo_timeline.png` y `demo_bloqueo.gif`, que ya estaban antes, se
+mantienen: las primeras miden los paquetes uno por uno, estas muestran la
+topología y la secuencia. Son complementarias.
+
 ## Topología (resumen)
+
+La misma topología en [diagrama dibujado](topologia-lab.png) y en código
+[mermaid](topologia-lab.md), que se renderiza con
+`npx @mermaid-js/mermaid-cli -i lab.mmd -o topologia-lab.svg`.
 
 | Nodo | Red wan `10.10.0.0/24` | Red lan `10.10.1.0/24` |
 |---|---|---|

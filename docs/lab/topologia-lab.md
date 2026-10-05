@@ -10,6 +10,12 @@ instalación y la necesidad de internet para montar el laboratorio.
 
 ## Diagrama
 
+![Topología del laboratorio virtual](topologia-lab.png)
+
+Este mismo diagrama en [SVG](topologia-lab.svg), por si hay que imprimirlo o
+escalarlo sin perder nitidez. El código fuente sigue abajo, que es lo que se
+edita si algún día cambia la topología:
+
 ```mermaid
 flowchart LR
     subgraph HOST["Host Windows · IDS/IPS (10.10.0.1 / 10.10.1.1)"]
