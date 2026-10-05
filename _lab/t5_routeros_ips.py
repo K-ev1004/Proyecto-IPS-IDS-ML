@@ -26,6 +26,12 @@
 #   setx MIKROTIK_PROFILE lab   (o config/mikrotik_lab.json con credenciales CHR)
 #   setx IDS_IPS_AUTONOMO 1
 #   python t5_routeros_ips.py
+#
+# Opcion:
+#   --evidencia-dir <ruta>   escribe los t5_*.txt y el informe_t5.json ahi en
+#                            lugar de docs/lab/. Permite conservar varias
+#                            corridas completas sin que una pise a otra:
+#                              python t5_routeros_ips.py --evidencia-dir docs\lab\corridas\corrida2
 # =============================================================================
 import os
 import re
@@ -72,8 +78,26 @@ except ImportError:
 
 import pandas as pd           # noqa: E402
 
-EVID = os.path.join(_PROJ, 'docs', 'lab')
+def _resolver_evidencia_dir():
+    """Devuelve la carpeta donde escribir las evidencias.
+
+    Por omision, docs/lab/. Con --evidencia-dir <ruta> se redirecta, lo que
+    permite conservar varias corridas completas en paralelo (por ejemplo
+    docs/lab/corridas/corrida2/) sin que una pise a la anterior.
+    """
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == '--evidencia-dir' and i + 1 < len(argv):
+            return os.path.abspath(argv[i + 1])
+        if a.startswith('--evidencia-dir='):
+            return os.path.abspath(a.split('=', 1)[1])
+    return os.path.join(_PROJ, 'docs', 'lab')
+
+
+EVID = _resolver_evidencia_dir()
 os.makedirs(EVID, exist_ok=True)
+if os.path.abspath(EVID) != os.path.join(_PROJ, 'docs', 'lab'):
+    print(f"[*] Evidencias de esta corrida en: {EVID}")
 
 # =============================================================================
 # Utilidades SSH

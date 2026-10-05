@@ -1,0 +1,5 @@
+SEQ HOST                                     SIZE TTL TIME       STATUS      
+    0 10.10.1.3                                                    timeout     
+    1 10.10.1.3                                                    timeout     
+    2 10.10.1.3                                                    timeout     
+    sent=3 received=0 packet-loss=100%

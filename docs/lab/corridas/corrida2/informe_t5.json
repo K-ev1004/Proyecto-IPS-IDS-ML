@@ -1,0 +1,53 @@
+{
+  "chr_ip": "10.10.0.2",
+  "atacante": "10.10.0.3",
+  "victima": "10.10.1.3",
+  "gates": [
+    {
+      "prueba": "chr_ssh",
+      "pass": true,
+      "detalle": "SSH+ver OK: ['uptime: 1h22m42s                   ']"
+    },
+    {
+      "prueba": "reglas_drop",
+      "pass": true,
+      "detalle": "forward=True input=True"
+    },
+    {
+      "prueba": "pre_ping",
+      "pass": true,
+      "detalle": "recibidos=3/3 (rc=0, True)"
+    },
+    {
+      "prueba": "bloqueo_confirmado",
+      "pass": true,
+      "detalle": "flujos_procesados=2 estado=CONFIRMADO(readback)"
+    },
+    {
+      "prueba": "post_ping_denegado",
+      "pass": true,
+      "detalle": "recibidos=0/3 (rc=0, False) (esperado recibidos=0)"
+    },
+    {
+      "prueba": "drop_forward_stats",
+      "pass": true,
+      "detalle": "paquetes drop en forward = 3 (esperado >0 tras el ataque)"
+    },
+    {
+      "prueba": "address_list_presente",
+      "pass": true,
+      "detalle": "print terse: 0 D comment=Bloqueado automticamente por NIPS CatBoost - 2026-10-05 12:54:16 list=IDS_BLACKLIST address=10.10.0.3 creati"
+    },
+    {
+      "prueba": "desbloqueado",
+      "pass": true,
+      "detalle": "modo=real confirmado(eliminado)=True"
+    },
+    {
+      "prueba": "tras_ping_restaurado",
+      "pass": true,
+      "detalle": "recibidos=3/3 (rc=0, True) (esperado recibidos>0)"
+    }
+  ],
+  "flujos_procesados_deteccion": 2
+}

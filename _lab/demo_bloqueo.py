@@ -264,6 +264,10 @@ class PingContinuo(threading.Thread):
         self._canal = None
         self._cli = None
         self.error = None
+        # Instante de llegada de cada trozo, indexado en coordenadas absolutas
+        # sobre el flujo (self._base + offset dentro de 'pendiente').
+        self._base = 0
+        self._trozos = []           # (ini_abs, fin_abs, t_llegada)
 
     # -- conexion -----------------------------------------------------------
     def _conectar(self):
@@ -290,6 +294,10 @@ class PingContinuo(threading.Thread):
 
     # --Callbacks de datos --------------------------------------------------
     def _procesar(self, texto, final=False):
+        if texto:
+            self._trozos.append((self._base + len(self.pendiente),
+                                 self._base + len(self.pendiente) + len(texto),
+                                 _ts()))
         self.pendiente += texto
         crudos = list(RE_PING_PKT.finditer(self.pendiente))
         # Se emiten todos menos el ultimo: puede estar todavia a medias.
@@ -304,13 +312,35 @@ class PingContinuo(threading.Thread):
         # ultimo) queda a la espera correctamente porque no se descarta.
         if self.cursor:
             self.pendiente = self.pendiente[self.cursor:]
+            self._base += self.cursor
+            self._cursor_limpido()
             self.cursor = 0
+
+    def _cursor_limpido(self):
+        """Olvida los trozos ya consumidos para que la lista no crezca sin fin."""
+        self._trozos = [t for t in self._trozos if t[1] > self._base]
+
+    def _t_de_posicion(self, pos_abs):
+        """Instante en que LLEGO el trozo que contenia esa posicion.
+
+        Sin esto el tiempo del paquete se tomaba al emitirse, y el retenido de
+        arriba retrasaba cada linea ~1 intervalo (1 s con interval=1): un ping
+        enviado justo antes del bloqueo se anotaba un segundo despues, ya dentro
+        de la etapa BLOQUEADO, y la demo fallaba por un artefacto de reloj.
+        """
+        for ini, fin, t in self._trozos:
+            if ini <= pos_abs < fin:
+                return t
+        return _ts()
 
     def _emitir(self, m):
         seq = int(m.group(1))
         rtt = _rtt_a_ms(m.group(5))
         ok = rtt is not None
-        t = _ts()
+        # El instante es el de LLEGADA del trozo que trajo la linea, no el de
+        # emision: con el retenido, emitir un intervalo mas tarde no significa que
+        # el paquete se enviara mas tarde.
+        t = self._t_de_posicion(self._base + m.start())
         with _CANDADO:
             self.paquetes.append((t, seq, ok, rtt))
         detalle = (f"rtt={rtt:.2f}ms" if ok else 'TIMEOUT')
@@ -556,7 +586,18 @@ def main():
                     help='prueba de humo: cada etapa dura 1 s salvo que se indique')
     ap.add_argument('--sin-deteccion', action='store_true',
                     help='no ejecutar el motor (solo pings y contador)')
+    ap.add_argument('--evidencia-dir', default=None,
+                    help='carpeta donde escribir el CSV de la linea de tiempo '
+                         '(def. docs/lab). Permite conservar varias corridas '
+                         'sin que una pise a la anterior')
     args = ap.parse_args()
+
+    if args.evidencia_dir:
+        global EVID, RUTA_CSV
+        EVID = os.path.abspath(args.evidencia_dir)
+        os.makedirs(EVID, exist_ok=True)
+        RUTA_CSV = os.path.join(EVID, 'demo_timeline.csv')
+        print(f"[*] Evidencia de esta corrida en: {EVID}")
 
     def _duracion(valor, defecto_humo, defecto):
         if valor is not None:
@@ -691,7 +732,31 @@ def main():
     # salio antes de que existiera la regla. Se cuentan aparte en vez de
     # colarlos en BLOQUEADO, que haria fallar la demo por un artefacto de
     # temporizacion y no por un fallo del IPS.
-    EN_VUELO = 1.5
+    #
+    # El margen ya no es una holgura inventada: los timestamps de los paquetes son
+    # los de LLEGADA (ver PingContinuo._t_de_posicion), asi que basta con el
+    # intervalo que separa el envio del bloqueo de su confirmacion por readback.
+    # Ese retardo se mide, no se supone: se toma de los propios paquetes que se
+    # sabe que salieron libres.
+    EN_VUELO = 0.5
+
+    def _margen_real():
+        """Retardo real entre el envio de un paquete y su anotacion.
+
+        Se estima con los paquetes OK anteriores al bloqueo: el ultimo de ellos
+        fue el mas cercano al corte, asi que su timestamp es el mejor techo. Si
+        no hay ninguno anterior, se cae al margen nominal.
+        """
+        bloqueo = MARCA.get('bloqueo')
+        if not bloqueo:
+            return EN_VUELO
+        previos = [t for t, _s, ok, _r in ping_v.paquetes
+                   if ok and t <= bloqueo]
+        if not previos:
+            return EN_VUELO
+        # El margen needed es pequeno: solo cubre el retardo de anotacion, que
+        # con la correccion es del orden de milisegundos.
+        return max(0.0, min(EN_VUELO, bloqueo - max(previos)))
 
     def _por_fase(medidor):
         """Cruza cada paquete con la etapa vigente en el momento de su recepcion.
@@ -712,11 +777,16 @@ def main():
                     etapa = cf
             if (etapa == 'BLOQUEADO' and ok
                     and MARCA.get('bloqueo')
-                    and t < MARCA['bloqueo'] + EN_VUELO):
+                    and t < MARCA['bloqueo'] + margen):
                 etapa = 'EN_VUELO'
             out.setdefault(etapa, []).append(ok)
         return out
 
+    margen = _margen_real()
+    if MARCA.get('bloqueo'):
+        _registrar('margen_envio',
+                   f'margen={margen:.3f}s '
+                   f'(bloqueo@{MARCA["bloqueo"]:.2f}s)')
     por_fase = _por_fase(ping_v)
     ctrl = _por_fase(ping_r)
 

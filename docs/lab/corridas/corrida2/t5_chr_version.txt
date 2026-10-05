@@ -1,0 +1,17 @@
+uptime: 1h22m42s                   
+                  version: 7.23.7 (long-term)         
+               build-time: 2026-09-16 12:19:15        
+         factory-software: 7.1                        
+              free-memory: 289.5MiB                   
+             total-memory: 512.0MiB                   
+                      cpu: Intel(R)                   
+                cpu-count: 1                          
+            cpu-frequency: 3187MHz                    
+                 cpu-load: 2%                         
+           free-hdd-space: 69.1MiB                    
+          total-hdd-space: 89.2MiB                    
+  write-sect-since-reboot: 5360                       
+         write-sect-total: 5360                       
+        architecture-name: x86_64                     
+               board-name: CHR innotek GmbH VirtualBox
+                 platform: MikroTik

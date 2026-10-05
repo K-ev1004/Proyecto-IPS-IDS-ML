@@ -72,6 +72,14 @@ Dataset_Limpio/
 # bloqueo, conteos por tipo y por clase de IP, sin direcciones).
 !docs/lab/bloqueos_resumen.json
 
+# Corridas adicionales del laboratorio. Cada corrida repite T5 y la demo para
+# tener un segundo resultado independiente que comparar con el primero; por eso
+# necesita sus propios CSV y figuras. Los scripts lo escriben con
+# --evidencia-dir / --salida-dir.
+!docs/lab/corridas/**/*.csv
+!docs/lab/corridas/**/*.txt
+!docs/lab/corridas/**/*.json
+
 # Dataset externo D2 (Zenodo 6907252, particion SQLi, 57,229 flujos NetFlow).
 # Lo leen demo_bloqueo.py:520, t5_routeros_ips.py:212, test_masivo.py:154 y 209,
 # entrenar_sqli_guard.py:41 y graficar_curva_sqli_guard.py:31. Sin el no hay

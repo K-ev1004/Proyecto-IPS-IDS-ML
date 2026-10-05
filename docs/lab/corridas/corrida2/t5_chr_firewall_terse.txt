@@ -1,0 +1,2 @@
+0 comment=IDS_BLACKLIST_DROP_FORWARD chain=forward action=drop src-address-list=IDS_BLACKLIST
+1 comment=IDS_BLACKLIST_DROP_INPUT chain=input action=drop src-address-list=IDS_BLACKLIST

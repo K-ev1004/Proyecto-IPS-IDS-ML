@@ -213,12 +213,22 @@ def figura_png(paq_v, paq_c, contador, marcas):
     print(f'[OK] figura: {RUTA_PNG}')
 
 
-def animacion_gif(paq_v, paq_c, contador, marcas, fps=12):
+def animacion_gif(paq_v, paq_c, contador, marcas, fps=12, max_fotogramas=320):
     """Redibuja el eje de tiempo creciendo hasta el final: el corte se 've' caer."""
     t0, t1 = _rango_comun([paq_v, paq_c, contador])
     ylim = _ylim_contador(contador)
     duracion = max(1.0, t1 - t0)
     n = max(2, int(duracion * fps))       # ~1 fotograma por decima de segundo
+    # El numero de fotogramas no puede crecer sin limite con la duracion de la
+    # corrida: a partir de unos 500, matplotlib 3.10 en Windows aborta el proceso
+    # con 0xC0000409 (desborde de pila) y se pierde el GIF entero. Se acota y se
+    # baja el ritmo para que el ancho de la animacion no dependa de lo que dure
+    # la demo: el PNG de la figura no se ve afectado.
+    if n > max_fotogramas:
+        fps = max(2, int(max_fotogramas / duracion))
+        n = max(2, int(duracion * fps))
+        print(f'[*] Corrida larga ({duracion:.0f} s): se ajusta el GIF a {n} fotogramas '
+              f'a {fps} fps para no desbordar la pila.')
 
     fig, ax = plt.subplots(figsize=(10, 4.6), dpi=100)
     def dibujar(i):
@@ -241,11 +251,24 @@ def main():
     ap.add_argument('--csv', default=RUTA_CSV)
     ap.add_argument('--solo-png', action='store_true',
                     help='omitir el GIF (tarda bastante mas)')
+    ap.add_argument('--salida-dir', default=None,
+                    help='carpeta donde escribir el PNG y el GIF. Por omision, '
+                         'la carpeta que contiene el CSV. Sirve para que cada '
+                         'corrida tenga sus propias figuras.')
     args = ap.parse_args()
 
     if not os.path.exists(args.csv):
         raise SystemExit(f'[X] No existe {args.csv}\n'
                          f'    Ejecuta antes: python _lab/demo_bloqueo.py')
+
+    global RUTA_PNG, RUTA_GIF
+    destino = args.salida_dir or os.path.dirname(os.path.abspath(args.csv))
+    os.makedirs(destino, exist_ok=True)
+    RUTA_PNG = os.path.join(destino, 'fig_bloqueo_timeline.png')
+    RUTA_GIF = os.path.join(destino, 'demo_bloqueo.gif')
+    if os.path.abspath(destino) != os.path.dirname(RUTA_CSV):
+        print(f'[*] Figuras de esta corrida en: {destino}')
+
 
     paq_v, paq_c, contador, marcas = cargar(args.csv)
     print(f'[CSV] {len(paq_v)} paquetes a la victima, {len(paq_c)} de control, '

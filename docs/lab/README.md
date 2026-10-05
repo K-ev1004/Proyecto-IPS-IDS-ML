@@ -60,6 +60,68 @@ laboratorio. Los `.sha256` sí se publican, pero sin su `.log` adjunto ninguno
 puede verificarse tras un clon.
 
 
+## Corridas repetidas (`corridas/`)
+
+La corrida de la tabla anterior es la que está en la raíz de `docs/lab/`. Para no
+pisarla, las siguientes se escriben en su propia carpeta con `--evidencia-dir`:
+
+```powershell
+python .\_lab\t5_routeros_ips.py   --evidencia-dir docs\lab\corridas\corrida2
+python .\_lab\demo_bloqueo.py      --evidencia-dir docs\lab\corridas\corrida2
+python .\_lab\graficar_bloqueo.py  --csv docs\lab\corridas\corrida2\demo_timeline.csv `
+                                    --salida-dir docs\lab\corridas\corrida2
+```
+
+Sin ese flag los scripts siguen escribiendo en `docs/lab/`, igual que antes.
+Cada corrida deja su CSV, sus figuras y la consola completa de T5 y de la demo.
+
+### Corrida 2
+
+Repetición independiente de la corrida 1, con las tres VMs encendidas en ventana
+visible para poder grabarla. Resultado: **T5 9/9** y **demo 5/5**, coherente con
+la corrida 1. Durante la etapa bloqueada hubo **0 paquetes aceptados y 16
+descartados** hacia la víctima, mientras el control `víctima→router` quedó en
+**18/18**: el corte es del atacante, no de la red.
+
+Esta repetición no fue un trámite: sirve de replicación, y además destapó un
+defecto de medición que la corrida 1 no había mostrado (ver abajo).
+
+
+### Defecto corregido: la hora anotada no era la de envío
+
+La primera corrida 2 dio **4/5**. El veredicto «dejó de llegar mientras estaba
+bloqueado» falló porque un paquete que había salido **antes** del bloqueo se
+anotaba **después**, y ya dentro de la etapa `BLOQUEADO`.
+
+La causa no estaba en el IPS sino en el instrumento: `PingContinuo` retiene la
+última línea de cada trozo para no emitir un paquete a medias (necesario, porque
+las líneas llegan troceadas), pero tomaba la hora **al emitir**, no al llegar. Con
+`interval=1` eso retrasaba **todos** los sellos ~1 s. Medido sobre el CSV de la
+corrida 2, el desfase era de `+1,00 s` en cada paquete, con picos de `+2,00 s`
+cuando entraban dos trozos juntos.
+
+Un paquete enviado en `t=16,02` se anotaba en `t=18,06`: 1,7 s tarde, ya con la
+regla puesta, y por tanto contado como fuga. Al reconstruir el envío real desde
+la cadencia conocida del ping, ese paquete salió **antes** del bloqueo confirmado
+en `t=16,37`: estaba en vuelo de verdad. En las dos corridas **ningún** timeout
+se había enviado antes del bloqueo, que es justo la firma de un bloqueo que
+funciona.
+
+La corrección (`PingContinuo._t_de_posicion`) fecha cada línea con el instante de
+**llegada** de su trozo, con lo que el retardo del retenido deja de desplazar los
+sellos. Verificado en aislamiento: el error por paquete pasa de `+1,00 s` a
+`+0,00 s`. La categoría `EN_VUELO` se conserva, pero el margen ya no es una
+holgura inventada: se mide y se anota en el CSV como `margen_envio`.
+
+Que la instrumentación se auto-verifique quedó documentado porque el caso es
+ilustrativo: una primera versión de la corrección falló con
+`'PingContinuo' object has no attribute '_cursor_limpio'` y dejó la demo en
+`0/0`. La causa era una errata en el nombre del método recién añadido, no la
+lógica del arreglo; los dos hilos de ping murieron en el primer trozo y por eso
+no se registró ningún paquete. Se detectó ejecutando el parser directamente, sin
+VMs, y quedó una comprobación que fija el comportamiento esperado.
+
+
 ## Topología (resumen)
 
 | Nodo | Red wan `10.10.0.0/24` | Red lan `10.10.1.0/24` |
