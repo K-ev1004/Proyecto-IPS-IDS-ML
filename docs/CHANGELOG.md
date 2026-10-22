@@ -7,6 +7,56 @@
 
 TAREAS IDS/IPS - ESTADO
 
+[22] SELLOS DE LOGS: .sha256 -> .sha512 (EXTENSION = ALGORITMO) Y FORMATO sha512sum
+     - Motivo: los sellos semanales se producian con SHA-512 (hashlib.sha512(),
+       log_exporter.py:173) pero se guardaban como ".sha256". La extension
+       contradecia el algoritmo; estaba documentado como salvedad conocida en
+       varios .md y en .gitignore, pero seguia siendo una etiqueta errónea.
+     - Se renombran los 9 sellos versionados: git mv de
+       logs_ciberseguridad/*.log.sha256 -> *.log.sha512. El valor del hash no
+       cambia: solo la extension.
+     - Cambio de formato: el contenido pasa de hex pelado a la forma estándar de
+       sha512sum ("<hash>  <nombre>\n", dos espacios), de modo que ahora se
+       verifican con 'sha512sum -c' en lugar de comparar a mano. log_exporter.py
+       escribe el nuevo sufijo y formato (newline='\n'); los 9 sellos históricos
+       se reformatearon con su hex ya calculado, sin necesitar el .log.
+     - Config: .gitattributes (regla -text pasa a *.sha512) y .gitignore
+       (comentario actualizado).
+     - Docs actualizados: docs/informe_privacidad_ips.md, docs/lab/demo-bloqueo.md,
+       docs/lab/README.md, docs/lab/bloqueos_resumen.json, articulo_cientifico_
+       metodologia_y_resultados.md y cambios.txt.
+     - NO se toca el SHA-256 del laboratorio (_lab/mk_lab_iso.py,
+       _lab/verify_lab_iso.py): ahi extension y algoritmo ya coincidian.
+
+[21] T3 REPRODUCIBLE: DOS CORRIDAS IDENTICAS Y DOCS CORREGIDAS
+     - Motivo: la documentacion afirmaba que precision/recall de T3 eran
+       "variable entre ejecuciones" por muestreo aleatorio, lo que obligaria a
+       reportar un rango en la tesis en lugar de un valor unico.
+     - Verificacion: test_masivo.py ejecutado DOS veces seguidas. Resultados
+       IDENTICOS en T1-T4 (exit 0 en ambas): T1 acc 0.8629 / F1 0.7423; T2
+       P 0.9985 / R 0.7534 / FP 33; T3 2343/3000 persistidos, prec 0.9983,
+       recall 0.7797, 2390 filas con trazabilidad; T4 linea_bloqueo_escrita=true.
+       Se comparo el JSON completo descartando campos de tiempo/ruta: sin
+       diferencias.
+     - La causa: la muestra de T3 YA estaba sembrada (random_state=1 en
+       test_masivo.py:210-212) y las features salen del CSV (sin datetime.now);
+       el texto "variable" era residuo de una version anterior de la prueba.
+     - T1 tampoco es un muestreo aleatorio: usa nrows=150000 (primeras filas
+       de un CSV barajado con semilla al generarse). Redaccion corregida.
+     - Docs actualizados: articulo_cientifico_fase3.md (tabla T3 y textos de
+       trazabilidad), docs/tesis/articulo_cientifico_metodologia_y_resultados.md
+       (tabla de metricas T3 y "lote aleatorio" -> "lote fijo"). La afirmacion
+       ya no aparece en ningun .md del repo.
+     - Nuevo: docs/tesis/respuestas-solicitud-informacion.md con las 20
+       respuestas institucionales/tecnicas/experimentales solicitadas, incluida
+       la declaracion de que NADA se prueba en produccion: toda la validacion
+       es sobre maquinas virtuales (CHR) para demostrar efectividad y detectar
+       fallos antes de una futura puesta en marcha.
+     - Autorizacion registrada: verbal, del ingeniero encargado de redes de
+       UNIPAZ, para analizar la red SIN interferir en ella (de ahi el lab).
+       Punto de captura: puerto del switch principal CONECTADO pero sin
+       port-mirror habilitado ni permisos de configuracion.
+
 [19] DEMO EN VIVO DEL BLOQUEO: 5/5 VEREDICTOS + FIGURA Y GIF
     - _lab/demo_bloqueo.py convierte el T5 de gates en algo grutable: dos pings
       continuos a 1 Hz más el muestreo del contador del router, en seis etapas
@@ -98,9 +148,9 @@ TAREAS IDS/IPS - ESTADO
        explicitas, cada una con su motivo. datasets/ exige reabrir la cadena de
        directorios: Git no re-incluye un archivo si su carpeta padre esta
        excluida.
-     - Docs: seccion 'Trazabilidad de la evidencia' en docs/lab/demo-bloqueo.md,
-       indice de artefactos en docs/lab/README.md y nuevo
-       docs/informe_privacidad_ips.md.
+      - Docs: seccion 'Trazabilidad de la evidencia' en docs/lab/demo-bloqueo.md,
+        indice de artefactos en docs/lab/README.md y nuevo
+        docs/informe_privacidad_ips.md.
 
 
 [18] O P2-LABORATORIO VIRTUAL + T5: EJECUTADO Y APROBADO 9/9

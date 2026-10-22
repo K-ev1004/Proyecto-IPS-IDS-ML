@@ -20,7 +20,7 @@ Modelos_Entrenados/*.pkl filter=lfs diff=lfs merge=lfs -text
 # Ver docs/informe_privacidad_ips.md.
 # ---------------------------------------------------------------------------
 logs_ciberseguridad/*.log -text
-logs_ciberseguridad/*.sha256 -text
+logs_ciberseguridad/*.sha512 -text
 
 # Dataset D2 (Zenodo 6907252). Se debe mantener byte-identico al original
 # para poder contrastar su hash contra el publicado por la fuente.

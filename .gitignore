@@ -104,12 +104,13 @@ datasets/SQLi_Zenodo/*
 # 113 bloqueos y las mismas 13 IPs de origen. En su lugar se publica
 # docs/lab/bloqueos_resumen.json con los conteos y sin direcciones.
 #
-# Los .sha256 de este directorio SI siguen versionados y conservan la constancia
+# Los .sha512 de este directorio SI siguen versionados y conservan la constancia
 # del sellado semanal, aunque sin el .log no pueden verificarse tras un clon.
-# OJO: contienen sumas SHA-512 pese a la extension (log_exporter.py:173), asi
-# que se verifican con sha512sum. Localmente los sellos de las semanas
-# 2026-09-04, 2026-09-15 y 2026-09-24 SI verifican; el de 2026-08-25 NO, porque
-# el .log cambio despues de ser sellado.
+# La extension coincide con el algoritmo (SHA-512, log_exporter.py:173) y el
+# contenido usa el formato de sha512sum ("<hash>  <nombre>"), verificable con
+# 'sha512sum -c'. Localmente los sellos de las semanas 2026-09-04, 2026-09-15 y
+# 2026-09-24 SI verifican; el de 2026-08-25 NO, porque el .log cambio despues de
+# ser sellado.
 
 # Ignorar todos los modelos de entrenamiento salvo el modelo de PRODUCCIÃ“N:
 # multiclase v5 + detector SQLiGuard. Se suben mediante Git LFS

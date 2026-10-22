@@ -56,7 +56,7 @@ Tres artefactos **no** se publican, y el motivo está en
 [`demo-bloqueo.md § Trazabilidad`](./demo-bloqueo.md#trazabilidad-de-la-evidencia)
 y en el informe de privacidad: `intrusiones.db` y los `.log` de
 `logs_ciberseguridad/` (contienen IPs públicas de terceros) y las credenciales del
-laboratorio. Los `.sha256` sí se publican, pero sin su `.log` adjunto ninguno
+laboratorio. Los `.sha512` sí se publican, pero sin su `.log` adjunto ninguno
 puede verificarse tras un clon.
 
 

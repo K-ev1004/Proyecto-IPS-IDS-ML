@@ -161,13 +161,15 @@ def registrar_bloqueo_log(ip, accion, duracion):
 # =============================================================================
 def generar_hash_archivo(ruta_log):
     """
-    Genera un archivo .sha256 con el hash SHA-512 del contenido del .log.
+    Genera un archivo .sha512 con el hash SHA-512 del contenido del .log.
+    El contenido usa el formato de sha512sum ("<hash>  <nombre>\n") para que
+    sea verificable con 'sha512sum -c'.
     
     Args:
         ruta_log (str): Ruta completa del archivo .log a hashear
         
     Returns:
-        str: Ruta del archivo .sha256 generado, o None si hay error
+        str: Ruta del archivo .sha512 generado, o None si hay error
     """
     try:
         sha512 = hashlib.sha512()
@@ -176,9 +178,9 @@ def generar_hash_archivo(ruta_log):
                 sha512.update(chunk)
         hash_hex = sha512.hexdigest()
         
-        ruta_sha = ruta_log + '.sha256'
-        with open(ruta_sha, 'w', encoding='utf-8') as f:
-            f.write(hash_hex)
+        ruta_sha = ruta_log + '.sha512'
+        with open(ruta_sha, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(f"{hash_hex}  {os.path.basename(ruta_log)}\n")
         
         return ruta_sha
     except Exception as e:

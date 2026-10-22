@@ -72,7 +72,7 @@ La evaluación de la efectividad del sistema se estructuró a partir de una bate
 
 ### Planteamiento cuantitativo y datos de prueba
 Para cuantificar el rendimiento se establecieron cuatro escenarios con particiones de datos verificadas:
-1. **Evaluación del Clasificador Multiclase v5**: Partición de prueba independiente estratificada (20% de hold-out sobre el dataset global consolidado de 3,738,678 registros provenientes de CIC-IDS2017, CSE-CIC-IDS2018 y CIC-DDoS2019), totalizando $N = 747,736$ flujos de prueba nunca antes vistos por el modelo (`CEREBRO_V5.py:61-63`). Adicionalmente, se ejecutó una validación masiva sobre un lote aleatorio de 150,000 flujos (`test_masivo.py:71-113`).
+1. **Evaluación del Clasificador Multiclase v5**: Partición de prueba independiente estratificada (20% de hold-out sobre el dataset global consolidado de 3,738,678 registros provenientes de CIC-IDS2017, CSE-CIC-IDS2018 y CIC-DDoS2019), totalizando $N = 747,736$ flujos de prueba nunca antes vistos por el modelo (`CEREBRO_V5.py:61-63`). Adicionalmente, se ejecutó una validación masiva sobre un lote fijo de 150,000 flujos (primeras filas del CSV, cuyo dataset se barajó con semilla en su generación) (`test_masivo.py:71-113`).
 2. **Evaluación de SQLiGuard en Test Externo**: Prueba sobre el dataset independiente *SQL Injection Attack Netflow* (Zenodo 6907252, partición D2 con ataques de tipo Blind en una topología y motor de base de datos PostgreSQL no presentes en el entrenamiento), compuesto por 57,229 flujos (28,615 benignos y 28,614 maliciosos) (`entrenar_sqli_guard.py`, `test_masivo.py:117-156`).
 3. **Evaluación de la Cadena Integrada (End-to-End)**: Prueba de la tubería completa `on_flow_ready` (v5 + SQLiGuard + filtros de confianza) procesando un lote balanceado sintético de 6,000 flujos (3,000 benignos y 3,000 SQLi) conectados a una base de datos temporal (`test_masivo.py:159-226`).
 
@@ -122,7 +122,7 @@ flowchart TD
     A --> IPS{IPS Activo}
     IPS -->|Modo Autónomo| MK[Bloqueo MikroTik SSH<br/>RouterOS CCR IDS_BLACKLIST]
     IPS -->|Modo Semi-Autónomo| AL[Alerta SOC solamente]
-    MK --> LG[(Logs semanales .log<br/>Hash SHA-512 .sha256)]
+    MK --> LG[(Logs semanales .log<br/>Hash SHA-512 .sha512)]
     DB --> GUI[Dashboard SOC Fluent<br/>interfasc.py · PyQt5]
 ```
 
@@ -137,7 +137,7 @@ El sistema quedó plenamente implementado a nivel de código fuente con las sigu
 
 * **Detección de Amenazas**: Operatividad simultánea de siete clases de clasificación bajo modelo CatBoost v5 (`Normal`, `Port_Scanner`, `Posible_Exploit`, `SYN_Flood`, `UDP_Flood`, `DDoS_Distribuido`, `Inyeccion_SQL`) complementada por detectores heurísticos basados en EWMA para tráfico en ráfaga (`ids.py:574-715`).
 * **Prevención y Bloqueo Activo (IPS)**: Automatización del bloqueo mediante conexión SSH directa a enrutadores MikroTik Cloud Core (CCR) a través de Paramiko, agregando IPs maliciosas a la lista `IDS_BLACKLIST` con tiempo de expiración configurable (por defecto 24 horas), complementado por un conmutador de modo autónomo/semi-autónomo (`mikrotik_api.py:28-75`, `ids.py:471-518`).
-* **Registro de Incidentes y Trazabilidad**: Persistencia estructurada en `intrusiones.db` con soporte de trazabilidad para auditar decisiones de inferencia mediante las columnas `confianza_ml` y `features_json` (`ids.py:288-296`). Adicionalmente, el subsistema `log_exporter.py` implementa la exportación semanal automática de registros planos `.log` y la generación obligatoria de sumas de comprobación SHA-512 (`.sha256`) conforme a estándares de evidencia digital del Ministerio de las TIC de Colombia.
+* **Registro de Incidentes y Trazabilidad**: Persistencia estructurada en `intrusiones.db` con soporte de trazabilidad para auditar decisiones de inferencia mediante las columnas `confianza_ml` y `features_json` (`ids.py:288-296`). Adicionalmente, el subsistema `log_exporter.py` implementa la exportación semanal automática de registros planos `.log` y la generación obligatoria de sumas de comprobación SHA-512 (`.sha512`) conforme a estándares de evidencia digital del Ministerio de las TIC de Colombia.
 * **Geolocalización del Atacante**: Identificación automática de subredes internas institucionales de UNIPAZ (`172.20.12.0/24` Docentes, `172.10.15.0/24` Administrativos, `172.30.10.0/24` Estudiantes) con resolución de hostnames y MACs mediante ARP, y geolocalización aproximada de IPs públicas vía `ip-api.com` con renderizado de mapas estáticos de OpenStreetMap en hilos secundarios desacoplados (`geolocalizacion.py`, `interfasc.py:119-153`).
 * **Visualización y Alertas**: Consola SOC en PyQt5 con interfaz Fluent Design oscura, provista de visualización de eventos en vivo, distribución de amenazas en gráficos circulares, monitoreo de paquetes/segundo y alertas por minuto, panel forense detallado de cuatro secciones HTML y despacho asíncrono de alertas a grupos de Telegram (`interfasc.py`, `telegram_alert.py`).
 
@@ -158,8 +158,8 @@ Los valores reportados a continuación provienen de los registros de prueba y va
 | **Recall (SQLiGuard - Test D2)** | **0.7534** (75.34 %) | Sensibilidad de detección frente a inyecciones SQL ciegas (*Blind*) no vistas en entrenamiento. |
 | **F1-Score (SQLiGuard - Test D2)** | **0.8588** | Balance armónico del detector de segunda etapa en ambiente de prueba externo. |
 | **Tasa de Falsos Positivos sobre Benignos (SQLiGuard)** | **0.00115** (0.115 %) | Solo 33 falsos positivos registrados sobre 28,615 flujos benignos de prueba ($FP / [FP + TN]$). |
-| **Precision Cadena Integrada (T3)** | **variable** entre ejecuciones | Verificada en lote de 6,000 flujos procesando la tubería completa `on_flow_ready`. La precision varía debido al muestreo aleatorio del dataset en cada ejecución. |
-| **Recall Cadena Integrada (T3)** | **variable** entre ejecuciones | La detección global efectiva de la cadena varía entre ejecuciones por la misma razón de muestreo aleatorio. |
+| **Precision Cadena Integrada (T3)** | **0.9983** (99.83 %) | Verificada en lote de 6,000 flujos procesando la tubería completa `on_flow_ready`; 4 falsos positivos sobre 2,343 registros SQLi persistidos. |
+| **Recall Cadena Integrada (T3)** | **0.7797** (77.97 %) | 2,343 de 3,000 ataques SQLi persistidos (661 FN). La muestra usa `random_state=1` (`test_masivo.py:210-212`), por lo que el resultado es **reproducible**: dos corridas consecutivas arrojaron valores idénticos. |
 | **Tiempo de Inferencia Algorítmica (v5)** | **~7.5 µs / flujo** | 1.13 segundos acumulados para clasificar 150,000 flujos (`informe_test_masivo.json:T1`). |
 | **Tiempo de Predicción (SQLiGuard)** | **~0.35 µs / flujo** | 0.02 segundos acumulados para evaluar 57,229 flujos (`informe_test_masivo.json:T2`). |
 | **Tiempo de Procesamiento Cadena Completa** | **~6.4 ms / flujo** | ~38 segundos para 6,000 flujos incluyendo pipeline, inferencia y persistencia SQLite (`T3`). |

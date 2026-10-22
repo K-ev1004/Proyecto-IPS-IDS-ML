@@ -3,7 +3,7 @@
     "total_flujos": 150000,
     "accuracy": 0.8629,
     "f1_macro": 0.7423,
-    "tiempo_pred_s": 2.09,
+    "tiempo_pred_s": 1.1,
     "clases": 7,
     "clases_detalle": {
       "DDoS_Distribuido": {
@@ -212,7 +212,7 @@
     "fn": 7055,
     "tp": 21559,
     "tasa_fp_benigno": 0.00115,
-    "tiempo_pred_s": 0.04,
+    "tiempo_pred_s": 0.02,
     "umbral": 0.3
   },
   "T3": {
@@ -220,7 +220,7 @@
     "sql_persistidos": 2343,
     "con_trazabilidad_features_json": 2390,
     "sql_guard_confirmados": 6000,
-    "tiempo_cadena_s": 74.53,
+    "tiempo_cadena_s": 41.62,
     "filas_en_bd_tmp": 2390,
     "precision_cadena": 0.9983,
     "recall_cadena": 0.7797,
@@ -233,7 +233,7 @@
       "logs_bloqueos.log"
     ],
     "linea_bloqueo_escrita": true,
-    "ruta_bloqueos": "C:\\Users\\rojas\\AppData\\Local\\Temp\\ids_logs_test_lngqwc9x\\logs_bloqueos.log",
-    "carpeta_logs_temp": "C:\\Users\\rojas\\AppData\\Local\\Temp\\ids_logs_test_lngqwc9x"
+    "ruta_bloqueos": "C:\\Users\\rojas\\AppData\\Local\\Temp\\ids_logs_test_lzry5h4v\\logs_bloqueos.log",
+    "carpeta_logs_temp": "C:\\Users\\rojas\\AppData\\Local\\Temp\\ids_logs_test_lzry5h4v"
   }
 }

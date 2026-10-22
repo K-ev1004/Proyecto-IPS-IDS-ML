@@ -89,7 +89,7 @@
     }
   },
   "integridad_sellos": {
-    "nota": "Los archivos .sha256 contienen sumas SHA-512 pese al nombre de la extension (log_exporter.py:173). Como los .log no se versionan, ninguno de los 9 sellos del repositorio puede verificarse tras un git clone.",
+    "nota": "Los archivos .sha512 contienen sumas SHA-512 (log_exporter.py:173) en formato sha512sum (<hash>  <nombre>), por lo que se verifican con sha512sum -c. Como los .log no se versionan, ninguno de los 9 sellos del repositorio puede verificarse tras un git clone.",
     "sellos_totales_en_repo": 9,
     "sellos_con_log_publicado": 0,
     "contenido_published": false

@@ -112,9 +112,10 @@ Plantillas publicables en su lugar: `config/mikrotik_lab.json.example` y
 
 ## 4. Integrity de los sellos
 
-Los archivos `*.sha256` de `logs_ciberseguridad/` **contienen sumas SHA-512**, no
-SHA-256, pese a la extensión: lo produce `log_exporter.py:173`
-(`hashlib.sha512()`). Verifican con `sha512sum`.
+Los archivos `*.sha512` de `logs_ciberseguridad/` contienen sumas **SHA-512**: lo
+produce `log_exporter.py:173` (`hashlib.sha512()`). La extensión coincide con el
+algoritmo y el contenido usa el formato de `sha512sum` (`<hash>  <nombre>`), por
+lo que se verifican con `sha512sum -c`.
 
 Estado tras el commit `[20]`:
 
@@ -126,7 +127,7 @@ Estado tras el commit `[20]`:
 | semana `2026-08-25 al 2026-09-01` | no | no, y además su sello no coincide con el `.log` local |
 | semanas `2026-08-24`, `2026-08-26`, `2026-08-28`, `2026-08-30`, `2026-09-01` | no | no, el `.log` ya no existe en la máquina |
 
-Los 9 `.sha256` siguen versionados, así que se conserva la constancia de qué
+Los 9 `.sha512` siguen versionados, así que se conserva la constancia de qué
 semana fue sellada y con qué valor. Pero al no publicar los `.log`, **ninguno de
 los 9 puede verificarse por un tercero**: la cadena de custodia queda
 incompleta. Es preferible a publicar los `.log` con sus IPs, y a que la tabla
@@ -136,10 +137,10 @@ Verificación local, contra la copia de trabajo (no contra el repositorio):
 
 | Semana | Sello SHA-512 | Resultado |
 |---|---|---|
-| `2026-09-04 al 2026-09-11` | declarado en el `.sha256` | **verifica** |
-| `2026-09-15 al 2026-09-22` | declarado en el `.sha256` | **verifica** |
-| `2026-09-24 al 2026-10-01` | declarado en el `.sha256` | **verifica** |
-| `2026-08-25 al 2026-09-01` | declarado en el `.sha256` | **no verifica**: el `.log` cambió después de ser sellado |
+| `2026-09-04 al 2026-09-11` | declarado en el `.sha512` | **verifica** |
+| `2026-09-15 al 2026-09-22` | declarado en el `.sha512` | **verifica** |
+| `2026-09-24 al 2026-10-01` | declarado en el `.sha512` | **verifica** |
+| `2026-08-25 al 2026-09-01` | declarado en el `.sha512` | **no verifica**: el `.log` cambió después de ser sellado |
 
 > [!IMPORTANT]
 > Durante la preparación de este commit se detectó y corrigió un fallo que
@@ -173,7 +174,7 @@ anotado para que no se citen como respaldo del mismo resultado.
 | `docs/lab/bloqueos_resumen.json` | `logs_ciberseguridad/*.log` | IPs de terceros |
 | `datasets/SQLi_Zenodo/D2_test.csv` | `config/mikrotik_lab.json` | credenciales |
 | `Captura_Linea_Base/captura_volumen_0911.csv` | `_lab/nodos.json` | credenciales |
-| `logs_ciberseguridad/*.sha256` (9) | `_lab/alpine.json` | parámetros de VM |
+| `logs_ciberseguridad/*.sha512` (9) | `_lab/alpine.json` | parámetros de VM |
 | `evidencia/*.csv` y `*.png` (preexistentes) | discos `.vmdk`, `.iso`, `_lab/vms/` | ~822 MB, regenerables |
 
 Sobre `D2_test.csv`: contiene IPs públicas, pero son **direcciones del propio

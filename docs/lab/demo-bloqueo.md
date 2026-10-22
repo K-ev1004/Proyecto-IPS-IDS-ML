@@ -106,17 +106,18 @@ Qué es fuente de verdad y qué es regenerable:
 | `docs/lab/bloqueos_resumen.json` | agregado de los `.log`, sin IPs | sí |
 | `datasets/SQLi_Zenodo/D2_test.csv` | dataset externo que alimenta la detección | sí (7,5 MB) |
 | `Captura_Linea_Base/captura_volumen_0911.csv` | línea base de tráfico, 150 muestras | sí |
-| `logs_ciberseguridad/*.sha256` | sellos semanales, sin el `.log` adjunto | sí (9) |
+| `logs_ciberseguridad/*.sha512` | sellos semanales, sin el `.log` adjunto | sí (9) |
 | `intrusiones.db` | base local con IPs de terceros | **no** |
 | `logs_ciberseguridad/*.log` | mismos datos que el `.db`, en texto plano | **no** |
 
 Tres salvedades que conviene no ocultar al leer la tabla:
 
-1. **Los `.sha256` contienen SHA-512**, no SHA-256, pese al nombre de la
-   extensión: así lo produce `log_exporter.py:173`. Verifican con `sha512sum`.
-   Como los `.log` no se publican, **ninguno de los 9 sellos puede verificarse
-   tras un `git clone`**: quedan como constancia del sellado, no como prueba
-   verificable por un tercero. Localmente, los de las semanas `2026-09-04`,
+1. **Los `.sha512` contienen sumas SHA-512** y usan el formato de `sha512sum`
+   (`<hash>  <nombre>`), así los produce `log_exporter.py:173`: la extensión
+   coincide con el algoritmo y se verifican con `sha512sum -c`. Como los `.log`
+   no se publican, **ninguno de los 9 sellos puede verificarse tras un `git
+   clone`**: quedan como constancia del sellado, no como prueba verificable por
+   un tercero. Localmente, los de las semanas `2026-09-04`,
    `2026-09-15` y `2026-09-24` sí verifican; el de `2026-08-25` no, porque el
    `.log` cambió después de ser sellado; los otros 5 corresponden a `.log` que ya
    no existen en la máquina.
