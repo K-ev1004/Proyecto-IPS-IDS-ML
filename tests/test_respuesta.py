@@ -172,6 +172,31 @@ def test_udp_flood_cdn_exenta(capturados):
 
 
 # -----------------------------------------------------------------------------
+# Lista blanca de hosts de gestión (decisión operativa 2026-10-28)
+# -----------------------------------------------------------------------------
+
+def test_hosts_gestion_en_lista_blanca_por_defecto():
+    """172.10.0.57/.59 eximidas del detector de exploit (TFTP broadcast en la
+    v1 = 45 % del ruido). Decisión registrada en docs/RUNBOOK_C3.md."""
+    assert '172.10.0.57' in ids.HOSTS_GESTION
+    assert '172.10.0.59' in ids.HOSTS_GESTION
+
+
+def test_host_gestion_exento_de_exploit(capturados):
+    for p in (445, 3389, 21):
+        ids.detectar_exploit(tcp('172.10.0.57', '172.10.1.30', p))
+    assert capturados == []
+
+
+def test_host_normal_interno_sigue_detectado_en_exploit(capturados):
+    """La exención es solo para HOSTS_GESTION: otro host interno conectándose
+    a puertos de explotación (posible movimiento lateral) se registra igual."""
+    ids.detectar_exploit(tcp('172.10.0.60', '172.10.1.30', 445))
+    assert len(capturados) == 1
+    assert capturados[0][0][1] == "Posible Exploit"
+
+
+# -----------------------------------------------------------------------------
 # Throttle de persistencia (familia flood/exploit)
 # -----------------------------------------------------------------------------
 

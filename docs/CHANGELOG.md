@@ -408,3 +408,27 @@ TAREAS IDS/IPS - ESTADO
     - Verificado: 20/20 pruebas, export semanal contra BD de humo muestra la
       evidencia completa, backup con purga funciona, artefactos de prueba
       limpiados.
+
+[26] DECISION HOSTS DE GESTION + RUNBOOK C3: SERVIDOR EN OBSERVACION 24/7
+    - Decision operativa (2026-10-28): 172.10.0.57 y 172.10.0.59 quedan en
+      LISTA BLANCA del detector de exploit (defecto de IDS_HOSTS_GESTION, ya
+      aplicado en [24]). Evidencia de la v1: su trafico era TFTP broadcast
+      (255.255.255.255:69), 25 alertas = 45 % del ruido de exploit. Se
+      descarto la alternativa de vigilancia etiquetada. Si la decision
+      cambia: IDS_HOSTS_GESTION="" sin tocar codigo.
+    - Fijado en pruebas: hosts de gestion exentos, host interno normal sigue
+      detectado (movimiento lateral). 23/23.
+    - scripts/corrida_observacion.py: motor headless para servidores (sin
+      GUI). Estado horario (pps, ventanas, eventos trazables), duracion por
+      IDS_DURACION_H o hasta Ctrl+C, resumen de corrida al salir. Verificado
+      en corrida real: 35/35 eventos trazables.
+    - scripts/lanzar_observacion.bat: env vars de la corrida (RUN_ID,
+      observacion=1, hosts gestion, IDS_IFACE para el SPAN) + log a archivo.
+    - scripts/configurar_tareas_c3.ps1 (como ADMIN): desactiva
+      suspension/hibernacion, crea tarea IDS-Observacion-C3 (al arranque,
+      reinicio 3x1min, limite 7 dias - el default de 72 h mataria la corrida)
+      y tarea IDS-Backup diaria 06:00 con purga >90 dias.
+    - docs/RUNBOOK_C3.md: runbook completo (preparacion, arranque,
+      comprobacion de captura, revision diaria, cierre, calibracion y paso a
+      C4) + decision de hosts de gestion documentada.
+    - README: enlace al runbook y defecto de IDS_HOSTS_GESTION.

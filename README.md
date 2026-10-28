@@ -72,7 +72,7 @@ Get-Process -Name npcap* -ErrorAction SilentlyContinue   # o: sc query npcap
 | `IDS_RUN_ID` | Etiqueta de la corrida (def. `run-<fecha>-<hora>`) | No |
 | `IDS_SCAN_THRESHOLD` / `IDS_SCAN_THRESHOLD_INT` | Umbral de escaneo externo/interno (puertos distintos a un destino) | No |
 | `IDS_SCAN_WINDOW` / `IDS_SCAN_COOLDOWN` / `IDS_SCAN_MIN_DST` | Ventana (s), enfriamiento por pareja (s) y destinos mínimos del barrido horizontal | No |
-| `IDS_HOSTS_GESTION` | IPs de gestión/monitorización exentas del detector de exploit | No |
+| `IDS_HOSTS_GESTION` | IPs de gestión/monitorización exentas del detector de exploit (def. `172.10.0.57,172.10.0.59` — TFTP broadcast; ver [Runbook C3](./docs/RUNBOOK_C3.md)) | No |
 | `IDS_IPS_AUTONOMO` | `1`: bloqueo autónomo vía MikroTik; `0` (defecto): semi-autónomo | No |
 
 > [!CAUTION]
@@ -197,6 +197,7 @@ flowchart TD
 | [ML](./docs/ml/) | Análisis técnico y viabilidad de datasets |
 | [Laboratorio](./docs/lab/) | Laboratorio virtual (RouterOS CHR), T5 y [demo en vivo](./docs/lab/demo-bloqueo.md) |
 | [Plan de lanzamiento v5](./docs/PLAN_LANZAMIENTO_V5.md) | Post-mortem de la v1, esquema v5, fases y criterios de aceptación |
+| [Runbook C3](./docs/RUNBOOK_C3.md) | Dejar el servidor 72 h en observación: tareas programadas, backup y calibración |
 | [Red UNIPAZ](./docs/red/) | Topología de red y plan de despliegue |
 | [Tesis](./docs/tesis/) | Anteproyecto y capítulos académicos |
 | [CHANGELOG](./docs/CHANGELOG.md) | Historial de cambios verificados |
