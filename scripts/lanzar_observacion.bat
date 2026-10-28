@@ -10,10 +10,11 @@ rem Umbrales/ventanas: usar los defectos del codigo salvo que se definan antes
 if not defined IDS_RUN_ID set IDS_RUN_ID=obs-c3-20261028
 rem Exencion de exploit decidida 2026-10-28 (TFTP broadcast): hosts de gestion
 if not defined IDS_HOSTS_GESTION set IDS_HOSTS_GESTION=172.10.0.57,172.10.0.59
-rem Duracion: 0 = hasta detener manualmente (schtasks /End o Ctrl+C)
-if not defined IDS_DURACION_H set IDS_DURACION_H=0
-rem IDS_IFACE: fijar con el nombre de la interfaz donde entra el SPAN, p. ej.:
-rem set IDS_IFACE=Ethernet
+rem Duracion: 72 h de la fase C3 (se detiene sola; 0 = hasta Ctrl+C o /End)
+if not defined IDS_DURACION_H set IDS_DURACION_H=72
+rem Interfaz de captura: "Ethernet" = Realtek 2.5GbE, IP 172.10.12.216 (red
+rem UNIPAZ, donde entra el SPAN). NO usar las VirtualBox (laboratorio CHR).
+set IDS_IFACE=Ethernet
 
 if not exist logs_ciberseguridad mkdir logs_ciberseguridad
 
