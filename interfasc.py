@@ -11,7 +11,7 @@ import sqlite3
 import logging
 import re
 from collections import Counter, deque
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from PyQt5.QtWidgets import (
@@ -249,7 +249,7 @@ class IDSInterface(FluentWindow):
                 ids.BASE_THRESHOLD_SYN_FLOOD = int(self.settings.value("thresh_syn", ids.BASE_THRESHOLD_SYN_FLOOD))
                 ids.BASE_THRESHOLD_DDOS = int(self.settings.value("thresh_ddos", ids.BASE_THRESHOLD_DDOS))
                 ids.BASE_THRESHOLD_UDP_FLOOD = int(self.settings.value("thresh_udp", ids.BASE_THRESHOLD_UDP_FLOOD))
-                ids.BASE_PORT_SCAN_THRESHOLD = int(self.settings.value("thresh_scan", ids.BASE_PORT_SCAN_THRESHOLD))
+                ids.PORT_SCAN_THRESHOLD = int(self.settings.value("thresh_scan", ids.PORT_SCAN_THRESHOLD))
                 # Umbrales del motor ML (unificados y SQLiGuard)
                 if hasattr(ids, 'UMBRAL_ML'):
                     ids.UMBRAL_ML = float(self.settings.value("umbral_ml", ids.UMBRAL_ML))
@@ -800,11 +800,11 @@ class IDSInterface(FluentWindow):
         box_scan = QVBoxLayout()
         scan_card = SimpleCardWidget()
         scan_layout = QVBoxLayout(scan_card)
-        scan_layout.addWidget(BodyLabel("Escaneo (puertos/IP):"))
+        scan_layout.addWidget(BodyLabel("Escaneo (puertos distintos a un destino en la ventana):"))
         self.spin_scan = SpinBox()
-        self.spin_scan.setRange(5, 500)
-        self.spin_scan.setValue(ids.BASE_PORT_SCAN_THRESHOLD)
-        self.spin_scan.valueChanged.connect(lambda v: self._update_threshold('thresh_scan', 'BASE_PORT_SCAN_THRESHOLD', v))
+        self.spin_scan.setRange(5, 2000)
+        self.spin_scan.setValue(ids.PORT_SCAN_THRESHOLD)
+        self.spin_scan.valueChanged.connect(lambda v: self._update_threshold('thresh_scan', 'PORT_SCAN_THRESHOLD', v))
         scan_layout.addWidget(self.spin_scan)
         box_scan.addWidget(scan_card)
         umbrales_layout.addLayout(box_scan)
@@ -1956,11 +1956,26 @@ class IDSInterface(FluentWindow):
             logging.error(f"Error guardando gráfica diaria: {e}")
 
     def guardar_csv_diario(self):
+        """Exporta las alertas de las últimas 24 h desde la base de datos (v5).
+
+        Antes se exportaba el buffer en memoria (deque con tope de 10.000),
+        lo que truncaba silenciosamente los CSV y perdía eventos al reiniciar.
+        Ahora la fuente es SQLite e incluye las columnas de evidencia del
+        detector de escaneo (n_puertos, n_destinos, ventana, umbral, modo).
+        """
         try:
-            with data_lock:
-                if not eventos_detectados:
-                    return
-                eventos_copia = list(eventos_detectados)
+            if ids is None or ids.conn is None:
+                raise RuntimeError("El motor IDS no está disponible")
+            desde = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec='seconds')
+            cursor_bd = ids.conn.cursor()
+            filas = cursor_bd.execute('''
+                SELECT ts_utc, ip_src, ip_dst, puerto, n_puertos, n_destinos,
+                       ventana_s, umbral, protocolo, tipo_ataque, origen,
+                       confianza_ml, modo
+                FROM ataques
+                WHERE ts_utc >= ?
+                ORDER BY id ASC
+            ''', (desde,)).fetchall()
 
             carpeta = os.path.join(BASE_DIR, 'evidencia')
             if not os.path.exists(carpeta):
@@ -1969,12 +1984,12 @@ class IDSInterface(FluentWindow):
             nombre = f"eventos_ids_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             with open(os.path.join(carpeta, nombre), 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Hora", "IP Origen", "IP Destino", "Puerto", "Protocolo", "Flag", "Tipo"])
-                chunk_size = 1000
-                for i in range(0, len(eventos_copia), chunk_size):
-                    writer.writerows(eventos_copia[i:i + chunk_size])
+                writer.writerow(["ts_utc", "IP Origen", "IP Destino", "Puerto",
+                                 "N Puertos", "N Destinos", "Ventana(s)", "Umbral",
+                                 "Protocolo", "Tipo", "Origen", "Confianza ML", "Modo"])
+                writer.writerows(filas)
 
-            self.mostrar_mensaje("Backup", f"CSV guardado: {nombre}", "info")
+            self.mostrar_mensaje("Backup", f"CSV guardado: {nombre} ({len(filas)} eventos)", "info")
         except Exception as e:
             logging.error(f"Error guardando CSV diario: {e}")
 

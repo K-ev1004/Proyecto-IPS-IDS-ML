@@ -1,0 +1,54 @@
+{
+  "archivado_utc": "2026-10-28T15:51:19+00:00",
+  "procedencia": "test",
+  "archivo": "intrusiones_test_20261028_155119.db",
+  "filas_ataques": 18570,
+  "primera_alerta": "Fri Aug 21 08:48:43 2026",
+  "ultima_alerta": "Wed Oct 28 08:44:00 2026",
+  "tipos": [
+    [
+      "Escaneo de Puertos (Heuristica)",
+      17743
+    ],
+    [
+      "Escaneo de Puertos (Heurística)",
+      521
+    ],
+    [
+      "DDoS Distribuido (Heuristica)",
+      187
+    ],
+    [
+      "Posible Exploit (Heuristica)",
+      56
+    ],
+    [
+      "DDoS Distribuido (Heurística)",
+      30
+    ],
+    [
+      "Inyeccion_SQL (ML: 92.4%)",
+      20
+    ],
+    [
+      "SYN Flood (Heuristica)",
+      2
+    ],
+    [
+      "Inyeccion_SQL (ML: 91.9%)",
+      2
+    ],
+    [
+      "SYN Flood (Heurística)",
+      1
+    ],
+    [
+      "Inyeccion_SQL (ML: 97.9%)",
+      1
+    ]
+  ],
+  "sha256": {
+    "intrusiones_test_20261028_155119.db": "e210738df91c47f91acb8d6db337c41af68cd53170a6edb73a17c7dfe5da4609"
+  },
+  "nota": "BD archivada al lanzar la v5 (docs/PLAN_LANZAMIENTO_V5.md)."
+}

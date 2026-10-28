@@ -321,3 +321,45 @@ TAREAS IDS/IPS - ESTADO
       spin_umbral_ml=0.85, spin_umbral_sqli=0.3, boton_logs presente.
     - Contrato senales intacto (eventos 7-tupla, nuevo_bloqueo, dashboard).
 
+
+[23] LANZAMIENTO V5 - C1+C2: ESQUEMA Y PERSISTENCIA + DETECTOR DE ESCANEO REDISEÑADO
+    - Motivo: post-mortem en heuristica.md (18.244 alertas de escaneo en 191 h,
+      0 % con evidencia). La produccion v1 ya no existe; se lanza una nueva.
+      Plan completo: docs/PLAN_LANZAMIENTO_V5.md.
+    - Esquema v5 (intrusiones_v5.db): columnas de evidencia de primera clase
+      (n_puertos, n_destinos, ventana_s, umbral, evidencia_json, modo,
+      version_motor, run_id, ts_utc ISO-8601) + 4 indices. Adios a la cadena
+      "Multiples" en la columna puerto (era INTEGER con texto dentro).
+    - guardar_ataque v5: la persistencia NUNCA pasa por throttle (la evidencia
+      no se descarta); el throttle (30 s) solo limita Telegram/bloqueo y su
+      clave es (ip, tipo) para que un detector no silencie a otro. Antes se
+      marcaba ANTES del INSERT y perdia la alerta si el INSERT fallaba.
+    - Modo observacion (IDS_MODO_OBSERVACION=1, defecto): persiste y muestra,
+      no alerta ni bloquea. Puerta de entrada del plan de calibracion.
+    - Detector de escaneo v5: ventana deslizante por par (src,dst), conteo de
+      puertos DISTINTOS, exenciones explicitas CDN/DNS (IPS_SCAN_EXENTAS,
+      ~60 % del ruido v1), umbral interno/externo (25/50), EWMA desactivado,
+      purga por tiempo con tope de claves (la v1 nunca limpiaba).
+    - Solo cuenta paquetes de INICIACION (sin ACK/RST): las respuestas SA/RST
+      de un servidor ya no parecen escaneo, y -sF/-sN/-sX siguen detectandose.
+    - Cooldown por par (120 s): un barrido largo cruza el umbral repetidas
+      veces al vaciarse la ventana; antes disparaba 4+ alertas por nmap.
+    - Barrido horizontal nuevo (nmap -p 445 subred/24): invisible para la v1.
+    - Contadores separados SYN flood (por src) y DDoS/UDP (por dst): antes
+      compartian dict con semanticas opuestas (contaminacion cruzada).
+    - Throttle de persistencia flood (10 s): nmap -sS dispara tambien SYN
+      Flood (119 SYN en <0,5 s); se persiste 1 en vez de cientos.
+    - interfasc.py: spin de escaneo ligado a PORT_SCAN_THRESHOLD; export
+      diario desde SQLite (antes deque(maxlen=10000): todos los CSV quedaban
+      truncados en exactamente 10.000 filas).
+    - Scripts: archivar_bd.py (mueve la BD con SHA-256 y ficha), backup_bd.py
+      (copia diaria comprimida, retencion 90 d), analizar_produccion.py
+      (post-mortem + --anonimizar para publicar sin IPs reales).
+    - Pruebas: tests/test_portscan.py 10/10 (paquetes sinteticos de scapy,
+      sin red): exenciones, iniciacion vs respuesta, vertical, stealth FIN,
+      trabajo normal (45 puertos/10 min = 0 alertas), umbral interno, escaneo
+      lateral interno NO exento, horizontal, persistencia con evidencia.
+    - Smoke end-to-end: 119 SYN -> 1 alerta de escaneo (26 puertos, ventana 60,
+      umbral 25) + 1 SYN Flood + 4 exploit (21/22/23/69); CDN exenta: 0.
+    - Evidencia: alertas_produccion_v1_anon.csv (18.288 filas anonimizadas)
+      y sha256_corpus_v1.txt. La BD de pruebas se archiva con hash.

@@ -1,5 +1,5 @@
 # =============================================================================
-# ids.py v3 — Motor principal del IDS (Intrusion Detection System)
+# ids.py v5 — Motor principal del IDS (Intrusion Detection System)
 # Captura tráfico de red en tiempo real, detecta patrones de ataque,
 # clasifica con ML, persiste en SQLite/CSV y notifica por Telegram
 # Universidad UNIPAZ
@@ -23,6 +23,7 @@ import joblib
 import json         
 import pandas as pd
 import numpy as np
+from datetime import datetime, timezone
 
 # Módulos de concurrencia
 from threading import Thread           
@@ -88,9 +89,33 @@ sniffer: AsyncSniffer = None
 # --- UMBRALES BASE DE DETECCIÓN ---
 BASE_THRESHOLD_SYN_FLOOD  = 50    
 BASE_THRESHOLD_DDOS       = 500   
-BASE_PORT_SCAN_THRESHOLD  = 40    
 BASE_THRESHOLD_UDP_FLOOD  = 500   
 TIEMPO_ENTRE_ALERTAS = 30    
+
+# --- ESCANEO DE PUERTOS (v5) ---
+# La métrica es "puertos distintos hacia UN MISMO destino dentro de una ventana".
+# Los parámetros se pueden ajustar sin tocar código (útil durante la calibración).
+PORT_SCAN_WINDOW_S           = int(os.environ.get('IDS_SCAN_WINDOW', 60))
+PORT_SCAN_THRESHOLD          = int(os.environ.get('IDS_SCAN_THRESHOLD', 50))
+PORT_SCAN_THRESHOLD_INTERNAL = int(os.environ.get('IDS_SCAN_THRESHOLD_INT', 25))
+PORT_SCAN_MIN_DESTINOS       = int(os.environ.get('IDS_SCAN_MIN_DST', 20))
+PORT_SCAN_WINDOW_LENTA_S     = int(os.environ.get('IDS_SCAN_WINDOW_SLOW', 300))
+PORT_SCAN_THRESHOLD_LENTA    = int(os.environ.get('IDS_SCAN_THRESHOLD_SLOW', 80))
+
+# Límites de memoria del detector (evitan fugas en redes de alto tráfico).
+PORT_SCAN_MAX_PAQUETES_PAR = 5000      # paquetes guardados por par (src, dst)
+PORT_SCAN_MAX_CLAVES       = 50000     # pares (src, dst) simultáneos
+LIMPIEZA_SCAN_CADA         = 5000      # paquetes entre purgas oportunistas
+
+# Compatibilidad con la interfaz anterior (obsoleto: usar PORT_SCAN_THRESHOLD).
+BASE_PORT_SCAN_THRESHOLD = PORT_SCAN_THRESHOLD
+
+# Versión del motor y de la corrida (trazabilidad de cada alerta).
+VERSION_MOTOR = 'ids-5.0.0'
+RUN_ID = os.environ.get('IDS_RUN_ID') or datetime.now().strftime('run-%Y%m%d-%H%M%S')
+
+# Modo observación: persiste y muestra los candidatos, pero NO alerta ni bloquea.
+IDS_MODO_OBSERVACION = os.environ.get('IDS_MODO_OBSERVACION', '1') == '1'
 
 # --- VARIABLES PARA EWMA (UMBRALES DINÁMICOS) ---
 ewma_pps = 0.0
@@ -110,6 +135,20 @@ def calcular_umbral_dinamico(base, max_mult=10.0):
 # --- PROTOCOLOS DE DISCOVERY (RUIDO) ---
 DISCOVERY_PORTS = {5353, 5355, 1900, 137, 138}
 
+# Puertos de servicio con tráfico legítimo masivo (p. ej. 7680 = Delivery
+# Optimization de Windows Update): excluidos de los contadores de flood.
+PUERTOS_SERVICIO_EXCLUIDOS = {7680}
+
+# Persistencia mínima entre eventos de la familia flood (ver guardar_ataque).
+THROTTLE_PERSISTENCIA_FLOOD = 10
+_ultimo_persist_por_clave = {}
+
+# Enfriamiento por par (src, dst) tras alertar un escaneo: un barrido largo
+# cruza el umbral una y otra vez al vaciarse la ventana; una alerta cada
+# PORT_SCAN_COOLDOWN_PAR segundos por pareja es suficiente.
+PORT_SCAN_COOLDOWN_PAR = int(os.environ.get('IDS_SCAN_COOLDOWN', 120))
+_ultimo_alerta_scan_par = {}
+
 # IP local del sistema
 try:
     from scapy.all import get_if_addr
@@ -119,11 +158,20 @@ except Exception:
     MI_IP = "127.0.0.1"
 
 # --- ESTRUCTURAS DE DATOS DE DETECCIÓN ---
-paquetes_por_ip    = defaultdict(list)
-puertos_por_ip     = defaultdict(set)
+syn_por_src        = defaultdict(list)   # SYN flood: ventana por IP origen
+flood_por_dst      = defaultdict(list)   # DDoS / UDP flood: ventana por IP destino
 eventos_detectados = deque(maxlen=100)
 advertencias_cont  = defaultdict(int)
-ultimo_ataque_por_ip = {}
+_ultimo_alerta_por_clave = {}           # (ip_src, tipo_ataque) -> timestamp
+
+# Escaneo de puertos v5: ventana deslizante por par (src, dst).
+# Cada entrada guarda (timestamp, puerto, protocolo).
+ventana_scan       = defaultdict(deque)
+_ultimo_ts_scan    = {}
+# Barrido horizontal: (src, puerto) -> {dst: timestamp}
+barrido_horizontal = defaultdict(dict)
+_ultimo_ts_horizontal = {}
+_pkts_desde_limpieza  = 0
 
 # Métricas para el Dashboard
 metricas_trafico = {
@@ -191,6 +239,37 @@ def ip_en_rangos(ip: str) -> bool:
         return any(ip_obj in net for net in RANGOS_CONFIABLES)
     except ValueError:
         return False
+
+
+# =============================================================================
+# EXENCIONES DEL DETECTOR DE ESCANEO (v5)
+# =============================================================================
+# IMPORTANTE: estas exenciones aplican SOLO al origen del escaneo. No se usa
+# RANGOS_CONFIABLES aquí porque contiene 172.16.0.0/12, que cubre las subredes
+# internas 172.20.x y 172.30.x: eximirlas cegaría el escaneo lateral interno
+# (el 20,6 % de las alertas de la v1 venían de orígenes internos).
+REDES_UNIPAZ = [
+    ipaddress.ip_network('172.10.0.0/16'),
+    ipaddress.ip_network('172.20.0.0/16'),
+    ipaddress.ip_network('172.30.0.0/16'),
+]
+
+IPS_SCAN_EXENTAS = {
+    "8.8.8.8", "8.8.4.4", "1.1.1.1", "9.9.9.9",
+    "208.67.222.222", "208.67.220.220",
+}
+
+# CDN y servicios que generaron ~60 % de las alertas de la v1.
+# Se usan rangos /16 o más específicos (nunca /8) para no cegar proveedores
+# cloud completos donde también puede alojarse un atacante.
+RANGOS_SCAN_EXENTOS = [
+    ipaddress.ip_network('34.117.0.0/16'),    # Google Cloud LB
+    ipaddress.ip_network('57.144.0.0/16'),    # Meta
+    ipaddress.ip_network('149.154.0.0/16'),   # Telegram
+    ipaddress.ip_network('172.217.0.0/16'),   # Google
+    ipaddress.ip_network('142.250.0.0/15'),   # Google
+    ipaddress.ip_network('104.16.0.0/13'),    # Cloudflare
+]
 
 
 # =============================================================================
@@ -272,65 +351,86 @@ def _features_sqli_guard(features_dict):
 # =============================================================================
 # BASE DE DATOS SQLite
 # =============================================================================
-# Esquema ÚNICO de la tabla `ataques` — columna de verdad compartida por
-# producción y por las pruebas T3. Antes, T3 creaba una tabla reducida (sin
-# ip_dst/vlan_id/ttl/packet_size) y el INSERT de guardar_ataque (11 columnas)
-# fallaba SILENCIOSAMENTE -> la cadena persistía 0 ataques.
+# Esquema ÚNICO de la tabla `ataques` (v5). Incluye la evidencia de la
+# heurística como columnas de primera clase: en la v1 el conteo de puertos se
+# perdía guardando la cadena "Múltiples" en `puerto`, lo que hizo imposible
+# auditar o recalibrar el detector.
 ESQUEMA_ATAQUES = '''
     CREATE TABLE IF NOT EXISTS ataques (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp  TEXT,
-        tipo_ataque TEXT,
-        ip_src     TEXT,
-        protocolo  TEXT,
-        puerto     INTEGER,
-        ip_dst     TEXT DEFAULT 'DESCONOCIDA',
-        confianza_ml REAL DEFAULT 0.0,
-        features_json TEXT,
-        vlan_id    INTEGER DEFAULT 0,
-        ttl        INTEGER DEFAULT 0,
-        packet_size INTEGER DEFAULT 0
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_utc         TEXT NOT NULL,
+        timestamp      TEXT,
+        tipo_ataque    TEXT NOT NULL,
+        origen         TEXT NOT NULL DEFAULT 'heuristica',
+        ip_src         TEXT NOT NULL,
+        ip_dst         TEXT NOT NULL DEFAULT 'DESCONOCIDA',
+        protocolo      TEXT,
+        puerto         INTEGER DEFAULT 0,
+        n_puertos      INTEGER DEFAULT 0,
+        n_destinos     INTEGER DEFAULT 0,
+        ventana_s      INTEGER DEFAULT 0,
+        umbral         INTEGER DEFAULT 0,
+        confianza_ml   REAL DEFAULT 0.0,
+        features_json  TEXT,
+        evidencia_json TEXT,
+        modo           TEXT DEFAULT 'observacion',
+        version_motor  TEXT,
+        run_id         TEXT,
+        vlan_id        INTEGER DEFAULT 0,
+        ttl            INTEGER DEFAULT 0,
+        packet_size    INTEGER DEFAULT 0
     )
 '''
 
+INDICES_ATAQUES = (
+    "CREATE INDEX IF NOT EXISTS idx_ataques_ts   ON ataques(ts_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_ataques_tipo ON ataques(tipo_ataque, ts_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_ataques_src  ON ataques(ip_src, ts_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_ataques_run  ON ataques(run_id)",
+)
+
+# Columnas v5 que pueden faltar si se abre una base anterior (por ejemplo una
+# copia de la BD de pruebas). En una base nueva no se ejecuta ningún ALTER.
+COLUMNAS_V5 = {
+    'ts_utc':         "TEXT",
+    'origen':         "TEXT DEFAULT 'heuristica'",
+    'n_puertos':      "INTEGER DEFAULT 0",
+    'n_destinos':     "INTEGER DEFAULT 0",
+    'ventana_s':      "INTEGER DEFAULT 0",
+    'umbral':         "INTEGER DEFAULT 0",
+    'evidencia_json': "TEXT",
+    'modo':           "TEXT DEFAULT 'observacion'",
+    'version_motor':  "TEXT",
+    'run_id':         "TEXT",
+}
+
 def crear_tabla_ataques(conn):
-    """Asegura la tabla `ataques` con el esquema completo (idempotente)."""
+    """Asegura la tabla `ataques` con el esquema v5 (idempotente)."""
     cur = conn.cursor()
     cur.execute(ESQUEMA_ATAQUES)
+    existentes = {fila[1] for fila in cur.execute("PRAGMA table_info(ataques)")}
+    for columna, ddl in COLUMNAS_V5.items():
+        if columna not in existentes:
+            try:
+                cur.execute(f"ALTER TABLE ataques ADD COLUMN {columna} {ddl}")
+            except sqlite3.OperationalError:
+                pass
+    for ddl in INDICES_ATAQUES:
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     return cur
 
-ruta_bd = os.path.join(BASE_DIR, 'intrusiones.db')
+
+# Base de datos de la NUEVA producción. `IDS_DB_PATH` permite apuntar a otra
+# ruta (laboratorio, pruebas, una corrida de calibración).
+ruta_bd = os.environ.get('IDS_DB_PATH') or os.path.join(BASE_DIR, 'intrusiones_v5.db')
 conn   = sqlite3.connect(ruta_bd, check_same_thread=False)
 cursor = conn.cursor()
 
-cursor.execute(ESQUEMA_ATAQUES)
-
-# ALTER para bases SQLite ya existentes (compatible si ya existen las columnas)
-try:
-    cursor.execute("ALTER TABLE ataques ADD COLUMN confianza_ml REAL DEFAULT 0.0")
-except sqlite3.OperationalError:
-    pass
-try:
-    cursor.execute("ALTER TABLE ataques ADD COLUMN features_json TEXT")
-except sqlite3.OperationalError:
-    pass
-try:
-    cursor.execute("ALTER TABLE ataques ADD COLUMN ip_dst TEXT DEFAULT 'DESCONOCIDA'")
-except sqlite3.OperationalError:
-    pass
-try:
-    cursor.execute("ALTER TABLE ataques ADD COLUMN vlan_id INTEGER DEFAULT 0")
-except sqlite3.OperationalError:
-    pass
-try:
-    cursor.execute("ALTER TABLE ataques ADD COLUMN ttl INTEGER DEFAULT 0")
-except sqlite3.OperationalError:
-    pass
-try:
-    cursor.execute("ALTER TABLE ataques ADD COLUMN packet_size INTEGER DEFAULT 0")
-except sqlite3.OperationalError:
-    pass
+cursor = crear_tabla_ataques(conn)
 
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS bloqueos (
@@ -459,7 +559,20 @@ flow_tracker = FlowTracker(on_flow_ready)
 # =============================================================================
 # FUNCIÓN: guardar_ataque
 # =============================================================================
-def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA", flag="N/A", es_ml_puro=False, confianza_ml=0.0, features_json=None, vlan_id=0, ttl=0, packet_size=0):
+def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA", flag="N/A",
+                   es_ml_puro=False, confianza_ml=0.0, features_json=None, vlan_id=0, ttl=0,
+                   packet_size=0, n_puertos=0, n_destinos=0, ventana_s=0, umbral=0,
+                   meta_heuristica=None, forzar=False, origen=None):
+    """Persiste un evento de detección y decide su notificación/bloqueo.
+
+    v5 (lecciones de heuristica.md):
+      - La persistencia NUNCA está sujeta al throttle: la evidencia no se descarta.
+      - El throttle (TIEMPO_ENTRE_ALERTAS) solo limita la notificación y el
+        bloqueo, y su clave es (ip_src, tipo_ataque) para que un detector no
+        silencie a otro.
+      - Cada fila guarda la evidencia de la heurística (n_puertos, ventana,
+        umbral, muestra de puertos) para poder auditar y recalibrar.
+    """
     if ip_src == MI_IP:
         return
 
@@ -474,132 +587,167 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
     if not packet_size:
         packet_size = datos.get("packet_size", 0)
 
-    # THROTTLE
     ahora = time.time()
-    if ahora - ultimo_ataque_por_ip.get(ip_src, 0) < TIEMPO_ENTRE_ALERTAS:
-        return
-    ultimo_ataque_por_ip[ip_src] = ahora
-    advertencias_cont[ip_src] += 1
-
+    ts_utc = datetime.now(timezone.utc).isoformat(timespec='seconds')
     timestamp = time.ctime()
 
     if es_ml_puro:
         tipo_final = f"{tipo_ataque} (ML: {confianza_ml*100:.1f}%)"
+        origen_final = origen or 'ml'
     else:
         tipo_final = f"{tipo_ataque} (Heuristica)"
+        origen_final = origen or 'heuristica'
 
-    # Mensaje de alerta
-    mensaje = (
-        f"SISTEMA DE INTRUSION:\n"
-        f"ALERT [IDS] {tipo_final} detectado\n"
-        f"IP Origen: {ip_src}\n"
-        f"IP Destino: {ip_dst}\n"
-        f"Protocolo: {protocolo}\n"
-        f"Puerto Destino: {puerto}\n"
-    )
+    # `puerto` es siempre numérico (0 = evento agregado). Cualquier texto va en
+    # la evidencia. Esto evita repetir el bug "Múltiples" de la v1.
+    try:
+        puerto_num = int(puerto)
+    except (TypeError, ValueError):
+        puerto_num = 0
 
-    # Persistencia en SQLite
+    evidencia = dict(meta_heuristica) if meta_heuristica else None
+
+    # --- Persistencia ---
+    # Escaneo y eventos ML: SIEMPRE (cada fila aporta evidencia distinta).
+    # Familia flood (SYN/DDoS/UDP): un barrido de nmap o un flood real genera
+    # cientos de eventos idénticos en 1 s; se conserva el primero y luego uno
+    # cada THROTTLE_PERSISTENCIA_FLOOD segundos para no inflar la BD.
+    ahora_persist = ahora
+    if tipo_ataque in ('SYN Flood', 'DDoS Distribuido', 'UDP Flood') and not forzar:
+        ultima = _ultimo_persist_por_clave.get((ip_src, tipo_ataque), 0)
+        if ahora_persist - ultima < THROTTLE_PERSISTENCIA_FLOOD:
+            return
+        _ultimo_persist_por_clave[(ip_src, tipo_ataque)] = ahora_persist
+
+    # --- Decisión de respuesta activa (antes de persistir, para registrar el modo) ---
+    t_lower = tipo_final.lower()
+    es_critico = ("exploit" in t_lower or "sql" in t_lower or "flood" in t_lower
+                  or "ddos" in t_lower or "escaneo" in t_lower or "scan" in t_lower
+                  or "bruteforce" in t_lower)
+    severidad_ips = "CRITICA" if ("exploit" in t_lower or "sql" in t_lower) else "ALTA"
+
+    puede_bloquear = False
+    if es_critico:
+        if es_ml_puro:
+            puede_bloquear = confianza_ml >= UMBRAL_ML
+        else:
+            puede_bloquear = True
+
+    if IDS_MODO_OBSERVACION:
+        modo = 'observacion'
+    elif ips_activo and puede_bloquear:
+        modo = 'bloqueo'
+    else:
+        modo = 'alerta'
+
+    # Persistencia en SQLite (SIEMPRE, incluso en modo observación)
     try:
         cursor.execute('''
-            INSERT INTO ataques (timestamp, tipo_ataque, ip_src, ip_dst, protocolo, puerto,
-                                 confianza_ml, features_json, vlan_id, ttl, packet_size)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (timestamp, tipo_final, ip_src, ip_dst, protocolo, puerto,
-              confianza_ml, features_json, vlan_id, ttl, packet_size))
+            INSERT INTO ataques (ts_utc, timestamp, tipo_ataque, origen, ip_src, ip_dst,
+                                 protocolo, puerto, n_puertos, n_destinos, ventana_s, umbral,
+                                 confianza_ml, features_json, evidencia_json, modo,
+                                 version_motor, run_id, vlan_id, ttl, packet_size)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (ts_utc, timestamp, tipo_final, origen_final, ip_src, ip_dst, protocolo,
+              puerto_num, n_puertos, n_destinos, ventana_s, umbral, confianza_ml,
+              features_json, json.dumps(evidencia) if evidencia else None, modo,
+              VERSION_MOTOR, RUN_ID, vlan_id, ttl, packet_size))
         conn.commit()
     except Exception as e:
         print(f"[!] ERROR persistiendo ataque en BD: {e}")
 
-    # Emitir señal Qt (tupla extendida: 10 elementos)
+    # Emitir señal Qt (tupla de 10 elementos, formato estable para la interfaz)
     evento = [timestamp, ip_src, ip_dst, puerto, protocolo, flag, tipo_final,
               vlan_id, ttl, packet_size]
     eventos_detectados.append(evento)
     comunicador.nuevo_evento.emit(evento)
 
-    # Alerta Telegram
-    try:
-        _enviar_alerta_async(mensaje)
-    except Exception as e:
-        pass
+    # THROTTLE de notificación: solo afecta a Telegram y al bloqueo, nunca a la BD.
+    clave_throttle = (ip_src, tipo_ataque)
+    debe_alertar = forzar or (ahora - _ultimo_alerta_por_clave.get(clave_throttle, 0) >= TIEMPO_ENTRE_ALERTAS)
+    if debe_alertar:
+        _ultimo_alerta_por_clave[clave_throttle] = ahora
+        advertencias_cont[ip_src] += 1
+
+    # Alerta Telegram (silenciada en modo observación)
+    if debe_alertar and not IDS_MODO_OBSERVACION:
+        mensaje = (
+            f"SISTEMA DE INTRUSION:\n"
+            f"ALERT [IDS] {tipo_final} detectado\n"
+            f"IP Origen: {ip_src}\n"
+            f"IP Destino: {ip_dst}\n"
+            f"Protocolo: {protocolo}\n"
+            f"Detalle: {n_puertos} puertos / {n_destinos} destinos (umbral {umbral})\n"
+        )
+        try:
+            _enviar_alerta_async(mensaje)
+        except Exception:
+            pass
 
     # --- LÓGICA DE RESPUESTA ACTIVA (IPS) ---
-    if ips_activo:
-        t_lower = tipo_final.lower()
-        es_critico = "exploit" in t_lower or "sql" in t_lower or "flood" in t_lower or "ddos" in t_lower or "escaneo" in t_lower or "scan" in t_lower or "bruteforce" in t_lower
+    # `modo` ya se decidió antes de persistir: solo se bloquea si el evento se
+    # registró como 'bloqueo' (nunca en modo observación).
+    if modo == 'bloqueo':
+        print(f"ALERT [IPS] Criterios de bloqueo cumplidos para {ip_src} | Tipo: {tipo_ataque} | Severidad: {severidad_ips}")
 
-        severidad_ips = "ALTA"
-        if "exploit" in t_lower or "sql" in t_lower:
-            severidad_ips = "CRITICA"
+        duracion = 24 # 24 horas por defecto en MikroTik
+        resultado_bloqueo = None
+        comando = ''
+        respuesta = ''
+        confirmado = 0
 
-        puede_bloquear = False
-        if es_critico:
-            if es_ml_puro:
-                if confianza_ml >= UMBRAL_ML:
-                    puede_bloquear = True
-            else:
-                puede_bloquear = True
-
-        if puede_bloquear:
-            print(f"ALERT [IPS] Criterios de bloqueo cumplidos para {ip_src} | Tipo: {tipo_ataque} | Severidad: {severidad_ips}")
-
-            duracion = 24 # 24 horas por defecto en MikroTik
-            resultado_bloqueo = None
-            comando = ''
-            respuesta = ''
-            confirmado = 0
-
-            if modo_ips_autonomo:
-                try:
-                    # Intento de bloqueo vía MikroTik Core (con readback de confirmación)
-                    resultado_bloqueo = mikrotik_api.bloquear_ip_mikrotik(ip_src, duracion_horas=duracion)
-                except Exception as e:
-                    print(f"[!] Bloqueo MikroTik fallido: {e}")
-                    resultado_bloqueo = {'ok': False, 'modo': 'error', 'confirmado': False,
-                                         'comando': '', 'respuesta': str(e), 'error': str(e)}
-            else:
-                print(f"[*] Modo Semi-Autónomo activo. Bloqueo de {ip_src} omitido (Solo Alerta).")
-
-            if isinstance(resultado_bloqueo, dict):
-                ok_bloqueo = resultado_bloqueo.get('ok', False)
-                modo = resultado_bloqueo.get('modo', 'error')
-                confirmado = 1 if resultado_bloqueo.get('confirmado', False) else 0
-                comando = resultado_bloqueo.get('comando', '')
-                respuesta = resultado_bloqueo.get('respuesta', '')
-                if confirmado:
-                    estado_bd = 'CONFIRMADO'
-                elif modo == 'mock':
-                    estado_bd = 'SIMULADO'
-                elif ok_bloqueo:
-                    estado_bd = 'ACTIVO'
-                else:
-                    estado_bd = 'ERROR'
-            else:
-                # Retorno booleano (compatibilidad): True = ACTIVO, False = SIMULADO/SEMI
-                ok_bloqueo = bool(resultado_bloqueo)
-                estado_bd = 'ACTIVO' if ok_bloqueo else 'SIMULADO/SEMI'
-
+        if modo_ips_autonomo:
             try:
-                cursor.execute('''
-                    INSERT INTO bloqueos (timestamp, ip_src, tipo_ataque, duracion, estado,
-                                          comando, respuesta, confirmado)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (timestamp, ip_src, tipo_final, duracion, estado_bd,
-                      comando, respuesta, confirmado))
-                conn.commit()
+                # Intento de bloqueo vía MikroTik Core (con readback de confirmación)
+                resultado_bloqueo = mikrotik_api.bloquear_ip_mikrotik(ip_src, duracion_horas=duracion)
             except Exception as e:
-                print(f"[!] No se pudo registrar el bloqueo en BD: {e}")
+                print(f"[!] Bloqueo MikroTik fallido: {e}")
+                resultado_bloqueo = {'ok': False, 'modo': 'error', 'confirmado': False,
+                                     'comando': '', 'respuesta': str(e), 'error': str(e)}
+        else:
+            print(f"[*] Modo Semi-Autónomo activo. Bloqueo de {ip_src} omitido (Solo Alerta).")
 
-            # Registrar el bloqueo en el archivo .log
-            registrar_bloqueo_log(ip_src, f"BLOQUEO_{tipo_ataque.upper().replace(' ', '_')}", duracion)
-
-            estado_bd_lower = estado_bd.lower()
-            if 'confirmado' in estado_bd_lower:
-                accion = "Bloqueo real confirmado (MikroTik)"
-            elif estado_bd_lower in ('simulado', 'simulado/semi'):
-                accion = "Sin bloqueo real (modo simulado/semi-autónomo)"
+        if isinstance(resultado_bloqueo, dict):
+            ok_bloqueo = resultado_bloqueo.get('ok', False)
+            modo_respuesta = resultado_bloqueo.get('modo', 'error')
+            confirmado = 1 if resultado_bloqueo.get('confirmado', False) else 0
+            comando = resultado_bloqueo.get('comando', '')
+            respuesta = resultado_bloqueo.get('respuesta', '')
+            if confirmado:
+                estado_bd = 'CONFIRMADO'
+            elif modo_respuesta == 'mock':
+                estado_bd = 'SIMULADO'
+            elif ok_bloqueo:
+                estado_bd = 'ACTIVO'
             else:
-                accion = "Error en bloqueo (MikroTik)"
-            comunicador.nuevo_bloqueo.emit([ip_src, accion, duracion, tipo_ataque, severidad_ips])
+                estado_bd = 'ERROR'
+        else:
+            # Retorno booleano (compatibilidad): True = ACTIVO, False = SIMULADO/SEMI
+            ok_bloqueo = bool(resultado_bloqueo)
+            estado_bd = 'ACTIVO' if ok_bloqueo else 'SIMULADO/SEMI'
+
+        try:
+            cursor.execute('''
+                INSERT INTO bloqueos (timestamp, ip_src, tipo_ataque, duracion, estado,
+                                      comando, respuesta, confirmado)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (timestamp, ip_src, tipo_final, duracion, estado_bd,
+                  comando, respuesta, confirmado))
+            conn.commit()
+        except Exception as e:
+            print(f"[!] No se pudo registrar el bloqueo en BD: {e}")
+
+        # Registrar el bloqueo en el archivo .log
+        registrar_bloqueo_log(ip_src, f"BLOQUEO_{tipo_ataque.upper().replace(' ', '_')}", duracion)
+
+        estado_bd_lower = estado_bd.lower()
+        if 'confirmado' in estado_bd_lower:
+            accion = "Bloqueo real confirmado (MikroTik)"
+        elif estado_bd_lower in ('simulado', 'simulado/semi'):
+            accion = "Sin bloqueo real (modo simulado/semi-autónomo)"
+        else:
+            accion = "Error en bloqueo (MikroTik)"
+        comunicador.nuevo_bloqueo.emit([ip_src, accion, duracion, tipo_ataque, severidad_ips])
 
 
 # =============================================================================
@@ -662,13 +810,19 @@ def detectar_syn_flood(packet):
         ip_src  = packet[scapy.IP].src
         ip_dst  = packet[scapy.IP].dst
         puerto  = packet[scapy.TCP].dport
+
+        if puerto in PUERTOS_SERVICIO_EXCLUIDOS:
+            return
+
         t       = time.time()
 
-        paquetes_por_ip[ip_src].append(t)
-        paquetes_por_ip[ip_src] = [ts for ts in paquetes_por_ip[ip_src] if t - ts <= 0.5]
+        # Contador propio de SYN flood (v5: antes compartía dict con DDoS,
+        # que indexa por destino -> contaminación cruzada de contadores).
+        syn_por_src[ip_src].append(t)
+        syn_por_src[ip_src] = [ts for ts in syn_por_src[ip_src] if t - ts <= 0.5]
 
-        if len(paquetes_por_ip[ip_src]) > calcular_umbral_dinamico(BASE_THRESHOLD_SYN_FLOOD):
-            guardar_ataque(ip_src, "SYN Flood", 'TCP', puerto, ip_dst, flag=str(packet[scapy.TCP].flags))
+        if len(syn_por_src[ip_src]) > calcular_umbral_dinamico(BASE_THRESHOLD_SYN_FLOOD):
+            guardar_ataque(ip_src, "SYN Flood", 'TCP', puerto, ip_dst, flag='S')
 
 def detectar_ddos(packet):
     if packet.haslayer(scapy.IP):
@@ -682,47 +836,203 @@ def detectar_ddos(packet):
             puerto = packet[scapy.UDP].dport
             protocolo = 'UDP'
         else:
-            puerto = 0
-            protocolo = 'OTRO'
-
-        if puerto in DISCOVERY_PORTS:
             return
-        if protocolo == 'UDP' and puerto == 0:
+
+        if puerto in DISCOVERY_PORTS or puerto in PUERTOS_SERVICIO_EXCLUIDOS:
+            return
+        # El flood UDP tiene su propio detector y umbral; aquí solo TCP.
+        if protocolo != 'TCP':
             return
 
         t = time.time()
-        paquetes_por_ip[ip_dst].append(t)
-        paquetes_por_ip[ip_dst] = [ts for ts in paquetes_por_ip[ip_dst] if t - ts <= 1]
+        flood_por_dst[ip_dst].append(t)
+        flood_por_dst[ip_dst] = [ts for ts in flood_por_dst[ip_dst] if t - ts <= 1]
 
-        umbral_ddos = calcular_umbral_dinamico(BASE_THRESHOLD_DDOS)
-        if len(paquetes_por_ip[ip_dst]) > umbral_ddos:
-            if protocolo == 'UDP' and len(paquetes_por_ip[ip_dst]) > calcular_umbral_dinamico(BASE_THRESHOLD_UDP_FLOOD):
-                return
+        if len(flood_por_dst[ip_dst]) > calcular_umbral_dinamico(BASE_THRESHOLD_DDOS):
             guardar_ataque(ip_src, "DDoS Distribuido", protocolo, puerto, ip_dst)
 
+# =============================================================================
+# ESCANEO DE PUERTOS v5 — ventana deslizante por par (src, dst)
+# =============================================================================
+def _es_ip_interna(ip):
+    """True si la IP pertenece a la red UNIPAZ o a un rango privado."""
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return a.is_private or any(a in red for red in REDES_UNIPAZ)
+
+
+def _es_origen_exento_scan(ip):
+    """Exenciones explícitas para el detector de escaneo (CDN/DNS).
+
+    Deliberadamente NO usa RANGOS_CONFIABLES: incluye 172.16.0.0/12, que cubre
+    las subredes internas 172.20.x y 172.30.x, y eximirlas cegaría la
+    detección de escaneo lateral interno.
+    """
+    if ip in IPS_SCAN_EXENTAS:
+        return True
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(a in red for red in RANGOS_SCAN_EXENTOS)
+
+
+def _registrar_scan_vertical(ip_src, ip_dst, proto, puertos, ventana_s, umbral, etiqueta):
+    meta = {
+        "heuristic": etiqueta,
+        "n_distinct_ports": len(puertos),
+        "threshold": umbral,
+        "window_s": ventana_s,
+        "ports_sample": sorted(puertos)[:50],
+        "policy": "v5",
+    }
+    guardar_ataque(ip_src, "Escaneo de Puertos", proto, 0, ip_dst,
+                   n_puertos=len(puertos), n_destinos=1, ventana_s=ventana_s,
+                   umbral=umbral, meta_heuristica=meta)
+
+
+def detectar_barrido_horizontal(ip_src, ip_dst, puerto, proto, ahora):
+    """Detecta `nmap -p <puerto> <subred>`: un puerto hacia muchos destinos."""
+    clave = (ip_src, puerto)
+    destinos = barrido_horizontal[clave]
+    destinos[ip_dst] = ahora
+    for d in [d for d, ts in destinos.items() if ahora - ts > PORT_SCAN_WINDOW_S]:
+        del destinos[d]
+    _ultimo_ts_horizontal[clave] = ahora
+
+    if len(destinos) > PORT_SCAN_MIN_DESTINOS:
+        meta = {
+            "heuristic": "port_scan_horizontal",
+            "n_destinations": len(destinos),
+            "threshold": PORT_SCAN_MIN_DESTINOS,
+            "window_s": PORT_SCAN_WINDOW_S,
+            "port": puerto,
+            "destinations_sample": sorted(destinos)[:50],
+            "policy": "v5",
+        }
+        guardar_ataque(ip_src, "Escaneo Horizontal", proto, puerto, ip_dst,
+                       n_puertos=1, n_destinos=len(destinos), ventana_s=PORT_SCAN_WINDOW_S,
+                       umbral=PORT_SCAN_MIN_DESTINOS, meta_heuristica=meta)
+        destinos.clear()
+
+
+def _limpiar_estructuras_scan(ahora):
+    """Purga oportunistas de memoria (cada LIMPIEZA_SCAN_CADA paquetes).
+
+    Sin esto, las claves (src, dst) inactivas se acumulan indefinidamente:
+    la v1 nunca limpiaba y la ventana propuesta en el borrador anterior
+    ('if not v: del ...') tampoco liberaba nada."""
+    global _pkts_desde_limpieza
+    _pkts_desde_limpieza += 1
+    if _pkts_desde_limpieza < LIMPIEZA_SCAN_CADA:
+        return
+    _pkts_desde_limpieza = 0
+
+    limite = ahora - PORT_SCAN_WINDOW_LENTA_S
+    for clave in [k for k, ts in _ultimo_ts_scan.items() if ts < limite]:
+        _ultimo_ts_scan.pop(clave, None)
+        ventana_scan.pop(clave, None)
+    for clave in [k for k, ts in _ultimo_ts_horizontal.items() if ts < limite]:
+        _ultimo_ts_horizontal.pop(clave, None)
+        barrido_horizontal.pop(clave, None)
+    for clave in [k for k, ts in _ultimo_alerta_scan_par.items() if ts < limite]:
+        _ultimo_alerta_scan_par.pop(clave, None)
+
+    # Tope duro de claves: si se supera, se descartan las más antiguas.
+    if len(ventana_scan) > PORT_SCAN_MAX_CLAVES:
+        exceso = len(ventana_scan) - PORT_SCAN_MAX_CLAVES
+        for clave in sorted(_ultimo_ts_scan, key=_ultimo_ts_scan.get)[:exceso]:
+            _ultimo_ts_scan.pop(clave, None)
+            ventana_scan.pop(clave, None)
+
+
 def detectar_escaneo_puertos(packet):
+    """v5: cuenta puertos DISTINTOS hacia UN destino dentro de una ventana.
+
+    Corrige los cuatro defectos de la v1 (ver heuristica.md):
+      1) conteo por par (src, dst), no global por IP origen;
+      2) ventana deslizante que caduca (antes el set nunca se vaciaba);
+      3) la evidencia (n_puertos, ventana, umbral, muestra) se persiste;
+      4) exenciones explícitas de CDN/DNS.
+    Solo cuenta paquetes de INICIACIÓN (sin ACK ni RST): las respuestas de un
+    servidor (SA/RST) no se confunden con un escaneo, y los escaneos stealth
+    (-sF/-sN/-sX) siguen detectándose.
+    """
     if not packet.haslayer(scapy.IP):
         return
 
     ip_src = packet[scapy.IP].src
     ip_dst = packet[scapy.IP].dst
 
+    if ip_src == MI_IP:
+        return
+    if _es_origen_exento_scan(ip_src):
+        return
+
     if packet.haslayer(scapy.TCP):
         flags = str(packet[scapy.TCP].flags)
+        if 'A' in flags or 'R' in flags:
+            return
+        proto = 'TCP'
         puerto = packet[scapy.TCP].dport
-        if flags != 'A':
-            puertos_por_ip[ip_src].add(f"TCP:{puerto}")
-
     elif packet.haslayer(scapy.UDP):
+        proto = 'UDP'
         puerto = packet[scapy.UDP].dport
-        if puerto not in DISCOVERY_PORTS:
-            puertos_por_ip[ip_src].add(f"UDP:{puerto}")
+        if puerto in DISCOVERY_PORTS:
+            return
+    else:
+        return
 
-    umbral_scan = calcular_umbral_dinamico(BASE_PORT_SCAN_THRESHOLD)
-    if len(puertos_por_ip[ip_src]) > umbral_scan:
-        guardar_ataque(ip_src, "Escaneo de Puertos", "TCP/UDP", "Múltiples", ip_dst)
-        if len(puertos_por_ip[ip_src]) > umbral_scan + 20:
-             puertos_por_ip[ip_src].clear()
+    if not (0 < puerto <= 65535):
+        return
+
+    ahora = time.time()
+
+    # Barrido horizontal: mismo puerto hacia muchos destinos
+    detectar_barrido_horizontal(ip_src, ip_dst, puerto, proto, ahora)
+
+    # Ventana deslizante por par (src, dst): retención hasta la ventana lenta
+    clave = (ip_src, ip_dst)
+    dq = ventana_scan[clave]
+    dq.append((ahora, puerto, proto))
+    while dq and ahora - dq[0][0] > PORT_SCAN_WINDOW_LENTA_S:
+        dq.popleft()
+    while len(dq) > PORT_SCAN_MAX_PAQUETES_PAR:
+        dq.popleft()
+    _ultimo_ts_scan[clave] = ahora
+
+    interna = _es_ip_interna(ip_dst)
+    umbral = PORT_SCAN_THRESHOLD_INTERNAL if interna else PORT_SCAN_THRESHOLD
+
+    # Enfriamiento por par: tras alertar, no repetir hasta que expire
+    ultima_alerta = _ultimo_alerta_scan_par.get(clave, 0)
+    en_enfriamiento = (ahora - ultima_alerta) < PORT_SCAN_COOLDOWN_PAR
+
+    # Ventana corta: escaneo clásico
+    puertos_corta = {p for (t, p, _) in dq if ahora - t <= PORT_SCAN_WINDOW_S}
+    if len(puertos_corta) > umbral:
+        if not en_enfriamiento:
+            _registrar_scan_vertical(ip_src, ip_dst, proto, puertos_corta,
+                                     PORT_SCAN_WINDOW_S, umbral, "port_scan_vertical")
+            _ultimo_alerta_scan_par[clave] = ahora
+        dq.clear()
+        return
+
+    # Ventana larga: escaneos lentos (-T1/-T2), severidad equivalente pero
+    # umbral más alto para no duplicar la alerta de la ventana corta
+    puertos_lenta = {p for (_, p, _) in dq}
+    if len(puertos_lenta) > PORT_SCAN_THRESHOLD_LENTA:
+        if not en_enfriamiento:
+            _registrar_scan_vertical(ip_src, ip_dst, proto, puertos_lenta,
+                                     PORT_SCAN_WINDOW_LENTA_S, PORT_SCAN_THRESHOLD_LENTA,
+                                     "port_scan_vertical_lento")
+            _ultimo_alerta_scan_par[clave] = ahora
+        dq.clear()
+        return
+
+    _limpiar_estructuras_scan(ahora)
 
 def detectar_exploit(packet):
     if not packet.haslayer(scapy.IP):
@@ -793,10 +1103,10 @@ def detectar_udp_flood(packet):
             return
 
         t = time.time()
-        paquetes_por_ip[ip_dst].append(t)
-        paquetes_por_ip[ip_dst] = [ts for ts in paquetes_por_ip[ip_dst] if t - ts <= 1]
+        flood_por_dst[ip_dst].append(t)
+        flood_por_dst[ip_dst] = [ts for ts in flood_por_dst[ip_dst] if t - ts <= 1]
 
-        if len(paquetes_por_ip[ip_dst]) > calcular_umbral_dinamico(BASE_THRESHOLD_UDP_FLOOD):
+        if len(flood_por_dst[ip_dst]) > calcular_umbral_dinamico(BASE_THRESHOLD_UDP_FLOOD):
             guardar_ataque(ip_src, "UDP Flood", 'UDP', puerto, ip_dst)
 
 
