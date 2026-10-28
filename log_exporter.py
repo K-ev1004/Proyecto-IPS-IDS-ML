@@ -85,22 +85,28 @@ def exportar_logs_semanales():
         nombre_archivo = f"logsciberseguridad {hace_7_dias.strftime('%Y-%m-%d')} al {hoy.strftime('%Y-%m-%d')}.log"
         ruta_archivo = os.path.join(LOGS_FOLDER, nombre_archivo)
         
-        # Conectar a la base de datos SQLite
-        ruta_db = os.path.join(BASE_DIR, 'intrusiones.db')
+        # Conectar a la base de datos SQLite (v5: IDS_DB_PATH permite otra ruta)
+        ruta_db = os.environ.get('IDS_DB_PATH') or os.path.join(BASE_DIR, 'intrusiones_v5.db')
         conn = sqlite3.connect(ruta_db)
         cursor = conn.cursor()
-        
+
+        # Columnas de evidencia v5 (solo si existen en la BD consultada)
+        columnas = {fila[1] for fila in cursor.execute("PRAGMA table_info(ataques)")}
+        extra = [c for c in ('origen', 'modo', 'n_puertos', 'n_destinos',
+                             'umbral', 'ventana_s') if c in columnas]
+
         # Obtener todos los ataques (el filtro se hace en Python porque los
         # timestamps se guardan en formato time.ctime(), no ISO)
-        cursor.execute('''
-            SELECT timestamp, tipo_ataque, ip_src, ip_dst, protocolo, puerto, vlan_id, ttl, packet_size
-            FROM ataques
-            ORDER BY rowid
-        ''')
-        
+        select = ('SELECT timestamp, tipo_ataque, ip_src, ip_dst, protocolo, puerto, '
+                  'vlan_id, ttl, packet_size' + (', ' + ', '.join(extra) if extra else '')
+                  + ' FROM ataques ORDER BY rowid')
+        cursor.execute(select)
+
         todos = cursor.fetchall()
         conn.close()
-        
+
+        nombres = ['timestamp', 'tipo_ataque', 'ip_src', 'ip_dst', 'protocolo',
+                   'puerto', 'vlan_id', 'ttl', 'packet_size'] + extra
         registros = [r for r in todos if _ts_en_rango(r[0], hace_7_dias, hoy)]
         
         with open(ruta_archivo, 'w', encoding='utf-8') as f:
@@ -109,19 +115,40 @@ def exportar_logs_semanales():
             f.write(f"Sistema IDS/IPS - UNIPAZ\n")
             f.write(f"================================================================================\n\n")
             
-            for timestamp, tipo_ataque, ip_src, ip_dst, protocolo, puerto, vlan_id, ttl, packet_size in registros:
+            for fila in registros:
+                d = dict(zip(nombres, fila))
+                timestamp, tipo_ataque = d['timestamp'], d['tipo_ataque']
+                ip_src, ip_dst = d['ip_src'], d['ip_dst']
+                protocolo, puerto = d['protocolo'], d['puerto']
+                vlan_id, ttl, packet_size = d['vlan_id'], d['ttl'], d['packet_size']
+
                 if 'ML:' in tipo_ataque:
                     nivel = "[CRITICAL]"
                 elif '(Heuristica)' in tipo_ataque:
                     nivel = "[WARNING]"
                 else:
                     nivel = "[INFO]"
-                
+
                 vlan_str = f" VLAN:{vlan_id}" if vlan_id else ""
                 ttl_str = f" TTL:{ttl}" if ttl else ""
                 size_str = f" SIZE:{packet_size}B" if packet_size else ""
-                
-                f.write(f"{timestamp} | {nivel} | IP_SRC: {ip_src} -> IP_DST: {ip_dst} | TIPO: {tipo_ataque} | PROTO: {protocolo} | PUERTO: {puerto}{vlan_str}{ttl_str}{size_str}\n")
+
+                # Evidencia del detector de escaneo v5 (evento agregado)
+                n_p = int(d.get('n_puertos') or 0)
+                n_d = int(d.get('n_destinos') or 0)
+                if n_p > 1:
+                    puerto_str = (f"PUERTO: agregado ({n_p} puertos"
+                                  + (f", umbral {d['umbral']}, ventana {d['ventana_s']}s"
+                                     if d.get('umbral') else "") + ")")
+                elif n_d > 1:
+                    puerto_str = f"PUERTO: {puerto} (1 puerto -> {n_d} destinos)"
+                else:
+                    puerto_str = f"PUERTO: {puerto}"
+
+                origen_str = f" | ORIGEN: {d['origen']}" if d.get('origen') else ""
+                modo_str = f" | MODO: {d['modo']}" if d.get('modo') else ""
+
+                f.write(f"{timestamp} | {nivel} | IP_SRC: {ip_src} -> IP_DST: {ip_dst} | TIPO: {tipo_ataque} | PROTO: {protocolo} | {puerto_str}{vlan_str}{ttl_str}{size_str}{origen_str}{modo_str}\n")
         
         ruta_sha = generar_hash_archivo(ruta_archivo)
         return ruta_archivo, ruta_sha

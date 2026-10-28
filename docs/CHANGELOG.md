@@ -389,3 +389,22 @@ TAREAS IDS/IPS - ESTADO
       bloqueo semi-autonomo (fila en bloqueos, estado SIMULADO/SEMI), ML bajo
       umbral no bloquea, SQLi solo observacion, muestra saneada, CDN exenta en
       SYN/DDoS/UDP, DDoS cuenta solo SYN, throttle de persistencia. 20/20.
+
+[25] LOG SEMANAL CON EVIDENCIA, RETENCION DE BD, PANEL V5 Y README
+    - log_exporter.py: SELECT ampliado con origen, modo, n_puertos, n_destinos,
+      umbral y ventana_s (detecta columnas via PRAGMA, compatible con BD v3).
+      La linea de log ahora incluye ORIGEN y MODO, y para eventos agregados:
+      'PUERTO: agregado (26 puertos, umbral 25, ventana 60s)'. BD apuntada:
+      IDS_DB_PATH o intrusiones_v5.db (antes intrusiones.db fijo).
+    - backup_bd.py: --purgar-dias 90 borra de la BD viva los eventos con
+      ts_utc anterior (SOLO tras backup exitoso). bloqueos.timestamp es
+      time.ctime() y no se purga por fecha. backups/ anadido a .gitignore.
+    - interfasc.py: tarjeta de escaneo con 4 controles (umbral externo, umbral
+      interno UNIPAZ, ventana, enfriamiento por pareja), persistidos en
+      QSettings con claves *_v5 y aplicados en vivo.
+    - README.md: caracteristicas v5 (evidencia, modo observacion, candidatas
+      SQLi), variables de entorno IDS_*, comandos de scripts y tests,
+      estructura (tests/, scripts/, evidencia/), estado del proyecto.
+    - Verificado: 20/20 pruebas, export semanal contra BD de humo muestra la
+      evidencia completa, backup con purga funciona, artefactos de prueba
+      limpiados.

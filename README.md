@@ -16,10 +16,16 @@ una **capa dedicada de confirmación de Inyección SQL (SQLiGuard)** y **respues
 - 🧠 **CatBoost v5** (multiclase, 7 clases UNIPAZ) sobre flujos bidireccionales CIC-style.
 - 💉 **SQLiGuard**: detector binario dedicado de Inyección SQL entrenado con ~230 K SQLi reales
   (Zenodo 6907252) → precisión **~99.8 %** sobre test externo independiente.
-- ⚖️ Heurística de respaldo (SYN/UDP flood, DDoS, port scan, exploit, SQLi regex) con umbrales EWMA dinámicos.
+- ⚖️ Heurística de respaldo con **evidencia auditable** (`n_puertos`, `n_destinos`, `ventana_s`,
+  `umbral` en cada fila): escaneo de puertos por ventana deslizante `(origen, destino)`,
+  barrido horizontal, SYN/UDP flood (solo SYN sin ACK), exploit y SQLi regex (solo candidatos:
+  SQLiGuard es el árbitro).
+- 🕯️ **Modo observación por defecto**: registra candidatos sin alertar ni bloquear (calibración
+  por percentiles antes de abrir alertas).
 - 🛡️ IPS activo: bloqueo automático o semi-autónomo vía SSH a MikroTik (RouterOS).
 - 📊 Dashboard SOC (PyQt5 + Fluent) con eventos, tráfico, gráficos y umbrales ajustables en vivo.
-- 🔔 Alertas por Telegram + logs semanales + trazabilidad SQLite (`confianza_ml`, `features_json`).
+- 🔔 Alertas por Telegram + logs semanales + trazabilidad SQLite (`confianza_ml`, `features_json`,
+  `evidencia_json`, `run_id`, `version_motor`).
 
 ## 📦 Requisitos previos
 
@@ -61,6 +67,13 @@ Get-Process -Name npcap* -ErrorAction SilentlyContinue   # o: sc query npcap
 | `TELEGRAM_BOT_TOKEN` | Token del bot de Telegram (ver `telegram_alert.py`) | Solo si se usan alertas |
 | `TELEGRAM_CHAT_IDS` | IDs de chat destino (separados por coma) | Solo si se usan alertas |
 | `MIKROTIK_IP` / `MIKROTIK_USER` / `MIKROTIK_PASS` | Credenciales del router para bloqueo IPS | Solo modo autónomo |
+| `IDS_MODO_OBSERVACION` | `1` (defecto): persiste candidatos sin alertar ni bloquear. `0`: alerta (y bloquea si aplica) | No |
+| `IDS_DB_PATH` | Ruta de la base SQLite (def. `intrusiones_v5.db`) | No |
+| `IDS_RUN_ID` | Etiqueta de la corrida (def. `run-<fecha>-<hora>`) | No |
+| `IDS_SCAN_THRESHOLD` / `IDS_SCAN_THRESHOLD_INT` | Umbral de escaneo externo/interno (puertos distintos a un destino) | No |
+| `IDS_SCAN_WINDOW` / `IDS_SCAN_COOLDOWN` / `IDS_SCAN_MIN_DST` | Ventana (s), enfriamiento por pareja (s) y destinos mínimos del barrido horizontal | No |
+| `IDS_HOSTS_GESTION` | IPs de gestión/monitorización exentas del detector de exploit | No |
+| `IDS_IPS_AUTONOMO` | `1`: bloqueo autónomo vía MikroTik; `0` (defecto): semi-autónomo | No |
 
 > [!CAUTION]
 > Las credenciales están **hardcodeadas** en `telegram_alert.py` y `mikrotik_api.py`
@@ -87,6 +100,18 @@ python entrenar_sqli_guard.py
 # Batería de pruebas masivas (datasets sintéticos + trazabilidad)
 python test_masivo.py
 
+# Pruebas unitarias del motor (paquetes sintéticos, sin red)
+.\venv\Scripts\python.exe -m pytest tests/ -v
+
+# Backup diario comprimido + purga de eventos > 90 días
+python scripts/backup_bd.py
+
+# Calibrar umbrales de escaneo tras la ventana de observación
+python scripts/calibrar_escaneo.py --horas 72
+
+# Analizar el post-mortem de la v1 (y generar copia anonimizada)
+python scripts/analizar_produccion.py --anonimizar evidencia/corpus_anon.csv
+
 # Exportar logs semanales
 python log_exporter.py
 ```
@@ -106,11 +131,11 @@ flowchart TD
     V5 --> G[SQLiGuard<br/>detector binario SQLi<br/>umbral 0.30]
     V5 --> D[Decisión ML<br/>confianza ≥ 0.85]
 
-    H --> A[guardar_ataque<br/>throttle + persistencia]
+    H --> A[guardar_ataque v5<br/>persiste SIEMPRE<br/>throttle solo notifica]
     G --> A
     D --> A
 
-    A --> DB[(SQLite<br/>ataques + bloqueos)]
+    A --> DB[(SQLite v5<br/>ataques + bloqueos<br/>evidencia_json · modo · run_id)]
     A --> TG[Telegram alert]
     A --> IPS{IPS activo}
     IPS -->|modo autónomo| MK[Bloqueo MikroTik<br/>SSH RouterOS]
@@ -142,6 +167,9 @@ flowchart TD
 ├── CEREBRO_V5.py                # Entrenamiento CatBoost v5
 ├── entrenar_sqli_guard.py       # Entrenamiento SQLiGuard
 ├── test_masivo.py               # Batería de pruebas end-to-end
+├── tests/                       # Pruebas unitarias del motor (scapy sintético)
+├── scripts/                     # backup_bd, archivar_bd, calibrar, post-mortem
+├── evidencia/                   # Exportaciones, corpus anonimizado y hashes
 ├── requirements.txt
 ├── .gitattributes               # Git LFS para *.pkl
 ├── scripts/legacy/              # Scripts históricos v2/v3 (conservados como evidencia)
@@ -168,6 +196,7 @@ flowchart TD
 | [ADRs](./docs/adr/) | Decisiones de arquitectura (v5, SQLiGuard, Git LFS) |
 | [ML](./docs/ml/) | Análisis técnico y viabilidad de datasets |
 | [Laboratorio](./docs/lab/) | Laboratorio virtual (RouterOS CHR), T5 y [demo en vivo](./docs/lab/demo-bloqueo.md) |
+| [Plan de lanzamiento v5](./docs/PLAN_LANZAMIENTO_V5.md) | Post-mortem de la v1, esquema v5, fases y criterios de aceptación |
 | [Red UNIPAZ](./docs/red/) | Topología de red y plan de despliegue |
 | [Tesis](./docs/tesis/) | Anteproyecto y capítulos académicos |
 | [CHANGELOG](./docs/CHANGELOG.md) | Historial de cambios verificados |
@@ -177,6 +206,9 @@ flowchart TD
 - Modelo **v5** en producción: acc 0.8641 · F1-macro 0.7442 · Kappa 0.8138.
 - **SQLiGuard**: precisión 99.85 % · recall 75 % (umbral 0.30) en test externo (D2).
 - Umbrales unificados: logueo y bloqueo ML con `UMBRAL_ML = 0.85`.
+- **Motor v5 (2026-10)**: esquema con evidencia completa, detector de escaneo por ventana
+  `(origen, destino)`, modo observación por defecto; lanzamiento de nueva producción en curso
+  (ver [plan de lanzamiento](./docs/PLAN_LANZAMIENTO_V5.md)).
 - Ver `docs/CHANGELOG.md` para el detalle completo.
 
 ---

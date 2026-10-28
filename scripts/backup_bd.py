@@ -19,7 +19,7 @@ import shutil
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -46,6 +46,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--bd', default=os.path.join(BASE_DIR, 'intrusiones_v5.db'))
     ap.add_argument('--retencion', type=int, default=90, help='días a conservar')
+    ap.add_argument('--purgar-dias', type=int, default=90,
+                    help='borrar de la BD los eventos anteriores a N días (0 = no purgar)')
     args = ap.parse_args()
 
     if not os.path.exists(args.bd):
@@ -68,7 +70,7 @@ def main():
     with open(destino_gz + '.sha256', 'w', encoding='utf-8') as f:
         f.write(f"{h}  {os.path.basename(destino_gz)}\n")
 
-    # Retención
+    # Retención de copias antiguas
     corte = time.time() - args.retencion * 86400
     eliminados = 0
     for nombre in os.listdir(dir_salida):
@@ -77,9 +79,29 @@ def main():
             os.remove(ruta)
             eliminados += 1
 
+    # Purga de eventos antiguos en la BD viva (SOLO tras un backup exitoso).
+    # `ts_utc` es ISO-8601, comparable como texto. `bloqueos.timestamp` usa
+    # time.ctime() (no comparable) y es una tabla pequeña: no se purga aquí.
+    purgados = 0
+    if args.purgar_dias > 0:
+        limite = (datetime.now(timezone.utc)
+                  - timedelta(days=args.purgar_dias)).isoformat(timespec='seconds')
+        conn_purga = sqlite3.connect(args.bd)
+        try:
+            cur = conn_purga.cursor()
+            purgados = cur.execute(
+                "DELETE FROM ataques WHERE ts_utc < ?", (limite,)).rowcount
+            conn_purga.commit()
+        except Exception as e:
+            print(f"[!] No se pudo purgar la BD: {e}")
+        finally:
+            conn_purga.close()
+
     tam = os.path.getsize(destino_gz) / (1024 * 1024)
     print(f"[OK] Backup: {destino_gz} ({tam:.1f} MB)")
     print(f"     SHA-256: {h}")
+    if purgados:
+        print(f"     Purga: {purgados} eventos anteriores a {args.purgar_dias} días eliminados")
     if eliminados:
         print(f"     Limpieza: {eliminados} copias anteriores a {args.retencion} días eliminadas")
 
