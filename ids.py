@@ -140,6 +140,9 @@ DISCOVERY_PORTS = {5353, 5355, 1900, 137, 138}
 PUERTOS_SERVICIO_EXCLUIDOS = {7680}
 
 # Persistencia mínima entre eventos de la familia flood (ver guardar_ataque).
+# Posible Exploit se incluye: un equipo que habla SMB todo el día generaría
+# miles de filas idénticas (misma evidencia, mismo par).
+TIPO_FLOOD_EXPLOIT        = ('SYN Flood', 'DDoS Distribuido', 'UDP Flood', 'Posible Exploit')
 THROTTLE_PERSISTENCIA_FLOOD = 10
 _ultimo_persist_por_clave = {}
 
@@ -148,6 +151,17 @@ _ultimo_persist_por_clave = {}
 # PORT_SCAN_COOLDOWN_PAR segundos por pareja es suficiente.
 PORT_SCAN_COOLDOWN_PAR = int(os.environ.get('IDS_SCAN_COOLDOWN', 120))
 _ultimo_alerta_scan_par = {}
+
+# Hosts internos de gestión/monitorización: se conectan de forma legítima y
+# continua a puertos de explotación (SMB, RDP, VNC...). En 191 h de la v1,
+# 172.10.0.57 y 172.10.0.59 concentraron el 45 % de las alertas de exploit.
+# VERIFICAR con redes que la lista esté actualizada. Vaciar con
+# IDS_HOSTS_GESTION="" para desactivar la exención.
+HOSTS_GESTION = set(
+    ip.strip() for ip in
+    os.environ.get('IDS_HOSTS_GESTION', '172.10.0.57,172.10.0.59').split(',')
+    if ip.strip()
+)
 
 # IP local del sistema
 try:
@@ -562,7 +576,7 @@ flow_tracker = FlowTracker(on_flow_ready)
 def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA", flag="N/A",
                    es_ml_puro=False, confianza_ml=0.0, features_json=None, vlan_id=0, ttl=0,
                    packet_size=0, n_puertos=0, n_destinos=0, ventana_s=0, umbral=0,
-                   meta_heuristica=None, forzar=False, origen=None):
+                   meta_heuristica=None, forzar=False, origen=None, modo_forzado=None):
     """Persiste un evento de detección y decide su notificación/bloqueo.
 
     v5 (lecciones de heuristica.md):
@@ -609,11 +623,11 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
 
     # --- Persistencia ---
     # Escaneo y eventos ML: SIEMPRE (cada fila aporta evidencia distinta).
-    # Familia flood (SYN/DDoS/UDP): un barrido de nmap o un flood real genera
-    # cientos de eventos idénticos en 1 s; se conserva el primero y luego uno
-    # cada THROTTLE_PERSISTENCIA_FLOOD segundos para no inflar la BD.
+    # Familia flood + Exploit: un barrido de nmap o un host que habla SMB todo
+    # el día genera cientos de eventos idénticos; se conserva el primero y
+    # luego uno cada THROTTLE_PERSISTENCIA_FLOOD segundos.
     ahora_persist = ahora
-    if tipo_ataque in ('SYN Flood', 'DDoS Distribuido', 'UDP Flood') and not forzar:
+    if tipo_ataque in TIPO_FLOOD_EXPLOIT and not forzar:
         ultima = _ultimo_persist_por_clave.get((ip_src, tipo_ataque), 0)
         if ahora_persist - ultima < THROTTLE_PERSISTENCIA_FLOOD:
             return
@@ -640,6 +654,11 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
     else:
         modo = 'alerta'
 
+    # Un detector puede degradar su propio evento (p. ej. la heurística regex
+    # de SQLi genera candidatos, no alertas: solo ML+SQLiGuard confirma).
+    if modo_forzado:
+        modo = modo_forzado
+
     # Persistencia en SQLite (SIEMPRE, incluso en modo observación)
     try:
         cursor.execute('''
@@ -656,9 +675,9 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
     except Exception as e:
         print(f"[!] ERROR persistiendo ataque en BD: {e}")
 
-    # Emitir señal Qt (tupla de 10 elementos, formato estable para la interfaz)
+    # Emitir señal Qt (13 elementos: los 10 originales + evidencia agregada y modo)
     evento = [timestamp, ip_src, ip_dst, puerto, protocolo, flag, tipo_final,
-              vlan_id, ttl, packet_size]
+              vlan_id, ttl, packet_size, n_puertos, n_destinos, modo]
     eventos_detectados.append(evento)
     comunicador.nuevo_evento.emit(evento)
 
@@ -669,8 +688,9 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
         _ultimo_alerta_por_clave[clave_throttle] = ahora
         advertencias_cont[ip_src] += 1
 
-    # Alerta Telegram (silenciada en modo observación)
-    if debe_alertar and not IDS_MODO_OBSERVACION:
+    # Alerta Telegram: el modo del MANDA es el del evento, no solo el global
+    # (un evento forzado a 'observacion' —p. ej. SQLi regex— nunca notifica).
+    if debe_alertar and modo != 'observacion':
         mensaje = (
             f"SISTEMA DE INTRUSION:\n"
             f"ALERT [IDS] {tipo_final} detectado\n"
@@ -813,6 +833,10 @@ def detectar_syn_flood(packet):
 
         if puerto in PUERTOS_SERVICIO_EXCLUIDOS:
             return
+        # Exención de origen (CDN/DNS): un CDN abre conexiones reales con SYN,
+        # pero nunca a 50 puertos/0,5 s hacia el mismo destino.
+        if _es_origen_exento_scan(ip_src):
+            return
 
         t       = time.time()
 
@@ -830,6 +854,12 @@ def detectar_ddos(packet):
         ip_src   = packet[scapy.IP].src
 
         if packet.haslayer(scapy.TCP):
+            # Un DDoS es una ráfaga de SYN sin ACK. Contar también data/ACK
+            # (como en la v1) convertía el tráfico legítimo de un servidor
+            # popular en 'DDoS' (causa de los FP hacia 172.10.12.216).
+            flags = str(packet[scapy.TCP].flags)
+            if 'A' in flags:
+                return
             puerto = packet[scapy.TCP].dport
             protocolo = 'TCP'
         elif packet.haslayer(scapy.UDP):
@@ -842,6 +872,9 @@ def detectar_ddos(packet):
             return
         # El flood UDP tiene su propio detector y umbral; aquí solo TCP.
         if protocolo != 'TCP':
+            return
+        # Exención de origen (CDN/DNS): sus SYN son apertura real de conexiones.
+        if _es_origen_exento_scan(ip_src):
             return
 
         t = time.time()
@@ -1039,7 +1072,11 @@ def detectar_exploit(packet):
         return
 
     ip_src = packet[scapy.IP].src
-    if ip_src in IPS_CONFIABLES or ip_en_rangos(ip_src):
+    # Exención: DNS/CDN + hosts de gestión (ver HOSTS_GESTION). Se mantiene
+    # ip_en_rangos porque cada estación Windows habla SMB/RDP de forma normal:
+    # sin esa exención masiva, la detección interna de exploits sería un storm
+    # de falsos positivos.
+    if ip_src in IPS_CONFIABLES or ip_en_rangos(ip_src) or ip_src in HOSTS_GESTION:
         return
 
     ip_dst    = packet[scapy.IP].dst
@@ -1059,7 +1096,20 @@ def detectar_exploit(packet):
     if puerto in PUERTOS_EXPLOIT:
         if protocolo == 'TCP' and flag not in ['S', 'SA']:
             return
-        guardar_ataque(ip_src, "Posible Exploit", protocolo, puerto, ip_dst, flag=flag)
+        guardar_ataque(ip_src, "Posible Exploit", protocolo, puerto, ip_dst, flag=flag,
+                       meta_heuristica={"heuristic": "exploit_port",
+                                        "port": puerto, "flag": flag, "policy": "v5"})
+
+_MARCAS_SENSIBLES = ('password', 'passwd', 'pwd=', 'authorization', 'token', 'secret')
+
+
+def _sanear_muestra_sqli(carga, limite=80):
+    """Muestra del payload para evidencia: truncada y sin posibles credenciales."""
+    bajo = carga.lower()
+    if any(marca in bajo for marca in _MARCAS_SENSIBLES):
+        return "<payload omitido: contiene posibles credenciales>"
+    return carga[:limite]
+
 
 def detectar_sql_injection(packet):
     if packet.haslayer(scapy.Raw):
@@ -1089,7 +1139,16 @@ def detectar_sql_injection(packet):
             )
             if sql_pattern.search(carga):
                 ip_dst = packet[scapy.IP].dst
-                guardar_ataque(ip_src, "SQL Injection", "TCP", puerto, ip_dst)
+                # v5: la heurística regex genera CANDIDATOS (persiste en modo
+                # observación), nunca alerta por sí sola — SQLiGuard es el
+                # árbitro (docs/PLAN_LANZAMIENTO_V5.md §3.3).
+                guardar_ataque(ip_src, "SQL Injection", "TCP", puerto, ip_dst,
+                               modo_forzado='observacion',
+                               meta_heuristica={
+                                   "heuristic": "sqli_regex",
+                                   "muestra": _sanear_muestra_sqli(carga),
+                                   "policy": "v5",
+                               })
         except Exception:
             pass
 
@@ -1100,6 +1159,8 @@ def detectar_udp_flood(packet):
         puerto    = packet[scapy.UDP].dport
 
         if puerto in DISCOVERY_PORTS:
+            return
+        if _es_origen_exento_scan(ip_src):
             return
 
         t = time.time()

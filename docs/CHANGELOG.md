@@ -363,3 +363,29 @@ TAREAS IDS/IPS - ESTADO
       umbral 25) + 1 SYN Flood + 4 exploit (21/22/23/69); CDN exenta: 0.
     - Evidencia: alertas_produccion_v1_anon.csv (18.288 filas anonimizadas)
       y sha256_corpus_v1.txt. La BD de pruebas se archiva con hash.
+
+[24] C1+C2 AMPLIACION: EXENCIONES FLOOD, SQLI CANDIDATA, HOSTS DE GESTION Y UI V5
+    - Senal Qt de 10 a 13 elementos (n_puertos, n_destinos, modo). La celda
+      Puerto muestra la evidencia: "26 puertos -> 1 destino" / "1 puerto ->
+      N destinos" en vez de un 0 sin sentido. Fallback lst[:13] retrocompatible.
+    - QSettings: clave nueva thresh_scan_v5; la vieja thresh_scan podia pisar
+      el umbral nuevo con el 40 de la v1 en el primer arranque.
+    - detectar_ddos: cuenta SOLO SYN sin ACK. Contar data/ACK convertia el
+      trafico legitimo de un servidor popular en DDoS (FP hacia 172.10.12.216).
+      Con 300 paquetes PA de una CDN: 0 alertas; con 501 SYN: 1 alerta.
+    - detectar_syn_flood y detectar_udp_flood: exencion de origen (CDN/DNS).
+    - detectar_exploit: HOSTS_GESTION (env IDS_HOSTS_GESTION, defecto
+      172.10.0.57/.59, concentraban el 45 % en la v1) + evidencia JSON
+      (heuristic/port/flag). VERIFICAR la lista con redes.
+    - SQLi regex degradada a candidata: modo_forzado='observacion' en
+      guardar_ataque; solo ML+SQLiGuard alerta. Muestra de payload truncada a
+      80 chars y omitida si contiene posibles credenciales.
+    - BUG que las pruebas destaparon: un evento forzado a observacion igual
+      enviaba Telegram (se miraba el modo global y no el del evento). Corregido:
+      el modo del evento manda.
+    - Throttle de persistencia ampliado a Posible Exploit (10 s): un host que
+      habla SMB todo el dia no genera miles de filas identicas.
+    - tests/test_respuesta.py (10 nuevos): modo alerta (Telegram, sin bloqueo),
+      bloqueo semi-autonomo (fila en bloqueos, estado SIMULADO/SEMI), ML bajo
+      umbral no bloquea, SQLi solo observacion, muestra saneada, CDN exenta en
+      SYN/DDoS/UDP, DDoS cuenta solo SYN, throttle de persistencia. 20/20.

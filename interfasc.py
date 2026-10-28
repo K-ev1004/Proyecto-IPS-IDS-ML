@@ -249,7 +249,9 @@ class IDSInterface(FluentWindow):
                 ids.BASE_THRESHOLD_SYN_FLOOD = int(self.settings.value("thresh_syn", ids.BASE_THRESHOLD_SYN_FLOOD))
                 ids.BASE_THRESHOLD_DDOS = int(self.settings.value("thresh_ddos", ids.BASE_THRESHOLD_DDOS))
                 ids.BASE_THRESHOLD_UDP_FLOOD = int(self.settings.value("thresh_udp", ids.BASE_THRESHOLD_UDP_FLOOD))
-                ids.PORT_SCAN_THRESHOLD = int(self.settings.value("thresh_scan", ids.PORT_SCAN_THRESHOLD))
+                # v5: clave nueva para no heredar el umbral guardado por la v1
+                # (thresh_scan almacenaba el valor del contador global antiguo).
+                ids.PORT_SCAN_THRESHOLD = int(self.settings.value("thresh_scan_v5", ids.PORT_SCAN_THRESHOLD))
                 # Umbrales del motor ML (unificados y SQLiGuard)
                 if hasattr(ids, 'UMBRAL_ML'):
                     ids.UMBRAL_ML = float(self.settings.value("umbral_ml", ids.UMBRAL_ML))
@@ -804,7 +806,7 @@ class IDSInterface(FluentWindow):
         self.spin_scan = SpinBox()
         self.spin_scan.setRange(5, 2000)
         self.spin_scan.setValue(ids.PORT_SCAN_THRESHOLD)
-        self.spin_scan.valueChanged.connect(lambda v: self._update_threshold('thresh_scan', 'PORT_SCAN_THRESHOLD', v))
+        self.spin_scan.valueChanged.connect(lambda v: self._update_threshold('thresh_scan_v5', 'PORT_SCAN_THRESHOLD', v))
         scan_layout.addWidget(self.spin_scan)
         box_scan.addWidget(scan_card)
         umbrales_layout.addLayout(box_scan)
@@ -1555,13 +1557,31 @@ class IDSInterface(FluentWindow):
                 if contenido_cambio:
                     for i, ev in enumerate(eventos_a_mostrar):
                         try:
-                            hora, ip_src, ip_dst, puerto, protocolo, flag, tipo, vlan_id, ttl, packet_size = ev
+                            (hora, ip_src, ip_dst, puerto, protocolo, flag, tipo,
+                             vlan_id, ttl, packet_size, n_puertos_ev, n_destinos_ev,
+                             modo_ev) = ev
                         except Exception:
-                            lst = list(ev) + [""] * 10
-                            hora, ip_src, ip_dst, puerto, protocolo, flag, tipo, vlan_id, ttl, packet_size = lst[:10]
+                            lst = list(ev) + [""] * 13
+                            (hora, ip_src, ip_dst, puerto, protocolo, flag, tipo,
+                             vlan_id, ttl, packet_size, n_puertos_ev, n_destinos_ev,
+                             modo_ev) = lst[:13]
+
+                        # v5: los eventos agregados traen puerto=0; mostrar la
+                        # evidencia (nº de puertos/destinos) en la celda Puerto.
+                        try:
+                            n_p = int(n_puertos_ev or 0)
+                            n_d = int(n_destinos_ev or 0)
+                        except (TypeError, ValueError):
+                            n_p, n_d = 0, 0
+                        if n_p > 1:
+                            puerto_txt = f"{n_p} puertos → 1 destino"
+                        elif n_d > 1:
+                            puerto_txt = f"1 puerto → {n_d} destinos"
+                        else:
+                            puerto_txt = puerto
 
                         sev_txt, sev_color = self._compute_severity(str(tipo))
-                        cols = [sev_txt, hora, ip_src, ip_dst, puerto, protocolo, flag, tipo]
+                        cols = [sev_txt, hora, ip_src, ip_dst, puerto_txt, protocolo, flag, tipo]
 
                         for j, v in enumerate(cols):
                             it = self.table.item(i, j)
