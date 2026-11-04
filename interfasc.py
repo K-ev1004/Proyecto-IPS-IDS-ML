@@ -145,7 +145,7 @@ class GeoWorker(QObject):
                     ub.get("lat", 0.0), ub.get("lon", 0.0),
                     self.ip_src, ub.get("city", ""), ub.get("country", ""),
                     self.color_sev, ub.get("hostname", ""),
-                    ub.get("status") == "private")
+                    ub.get("status", "public"))
         except Exception:
             resultado["mapa_datos"] = None
         self.finished.emit(resultado)
@@ -158,12 +158,23 @@ class MapaWorker(QObject):
         from staticmap import StaticMap, CircleMarker
 
         try:
-            ruta_db = os.path.join(BASE_DIR, 'intrusiones.db')
+            # BD ACTIVA (v5): antes se abria 'intrusiones.db' (la BD de la v1,
+            # que ya no existe) -> sqlite creaba un archivo vacio, la consulta
+            # fallaba y el mapa mostraba siempre "No hay ataques...". ids.ruta_bd
+            # respeta IDS_DB_PATH y la BD de produccion real.
+            ruta_db = ids.ruta_bd if ids else os.path.join(BASE_DIR, 'intrusiones_v5.db')
             conn = sqlite3.connect(ruta_db)
             cursor = conn.cursor()
+            # Deduplicado: los ultimos 10 rows suelen ser el mismo atacante
+            # repetido (en C3 una IP concentro 25 eventos); se muestran los 10
+            # atacantes DISTINTOS mas recientes.
             cursor.execute('''
-                SELECT ip_src, tipo_ataque
-                FROM ataques ORDER BY rowid DESC LIMIT 10
+                SELECT ip_src, MAX(rowid) AS ultima
+                FROM ataques
+                WHERE ip_src IS NOT NULL AND ip_src != 'DESCONOCIDA'
+                GROUP BY ip_src
+                ORDER BY ultima DESC
+                LIMIT 10
             ''')
             ultimos = cursor.fetchall()
             conn.close()
@@ -175,11 +186,13 @@ class MapaWorker(QObject):
             m = StaticMap(600, 300,
                           url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png')
 
-            for ip, tipo in ultimos:
+            for ip, _ultima in ultimos:
                 if not ip:
                     continue
                 try:
-                    ub = obtener_ubicacion_ip(ip) if obtener_ubicacion_ip else None
+                    # resolver_hostname=False: el DNS inverso de IPs publicas
+                    # tarda segundos por IP y no se muestra en este mapa.
+                    ub = obtener_ubicacion_ip(ip, resolver_hostname=False) if obtener_ubicacion_ip else None
                 except Exception:
                     ub = None
                 if not ub:
@@ -189,6 +202,10 @@ class MapaWorker(QObject):
                 if lat == 0.0 and lon == 0.0:
                     continue
                 m.add_marker(CircleMarker((lon, lat), (255, 50, 50), 8))
+
+            if len(m.markers) == 0:
+                self.finished.emit(None)
+                return
 
             image = m.render(zoom=5)
             buf = image.tobytes("raw", "RGB")
@@ -1500,6 +1517,12 @@ class IDSInterface(FluentWindow):
                 if pixmap:
                     scaled = pixmap.scaled(480, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.mapa_label.setPixmap(scaled)
+                else:
+                    self.mapa_label.setText("Ubicacion no disponible para esta IP")
+            else:
+                # Antes se dejaba el mapa del ataque ANTERIOR (imagen vieja):
+                # sin render hay que indicarlo, nunca mostrar datos pasados.
+                self.mapa_label.setText("Ubicacion no disponible para esta IP")
 
             if not ubicacion:
                 return
@@ -1926,17 +1949,24 @@ class IDSInterface(FluentWindow):
     def _on_map_refresh_clicked(self):
         self.btnActualizarMapa.setEnabled(False)
         self.btnActualizarMapa.setText("Cargando...")
+        # Generacion: si se pulsa Actualizar dos veces rapido, el resultado del
+        # primer hilo (que llega tarde) no pisa el render del segundo.
+        self._mapa_generation = getattr(self, '_mapa_generation', 0) + 1
+        gen = self._mapa_generation
 
         self._mapa_thread = QThread()
         self._mapa_worker = MapaWorker()
         self._mapa_worker.moveToThread(self._mapa_thread)
         self._mapa_thread.started.connect(self._mapa_worker.run)
-        self._mapa_worker.finished.connect(self._on_mapa_finished)
+        self._mapa_worker.finished.connect(
+            lambda data, g=gen: self._on_mapa_finished(data, g))
         self._mapa_worker.finished.connect(self._mapa_thread.quit)
         self._mapa_thread.start()
 
-    def _on_mapa_finished(self, data):
+    def _on_mapa_finished(self, data, gen=None):
         try:
+            if gen is not None and gen != getattr(self, '_mapa_generation', gen):
+                return  # resultado atrasado de una peticion anterior
             self.btnActualizarMapa.setEnabled(True)
             self.btnActualizarMapa.setText("Actualizar")
             if data and _render_pixmap_from_datos:

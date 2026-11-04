@@ -27,6 +27,12 @@ REDES_UNIPAZ = {
     "172.10.7.0/24":  {"departamento": "Administrativo",  "frecuencia": "5GHz"},
     "172.30.10.0/24": {"departamento": "Estudiantes",     "frecuencia": "2.4GHz"},
     "172.30.9.0/24":  {"departamento": "Estudiantes",     "frecuencia": "5GHz"},
+    # Fallback /16: cualquier IP de UNIPAZ no listada arriba sigue clasificando
+    # como interna. Antes caian a ip-api.com como si fueran publicas (172.10 no
+    # es RFC1918) y salian "Desconocido" en el mapa y el detalle.
+    "172.10.0.0/16":  {"departamento": "UNIPAZ (red interna)", "frecuencia": "-"},
+    "172.20.0.0/16":  {"departamento": "UNIPAZ (red interna)", "frecuencia": "-"},
+    "172.30.0.0/16":  {"departamento": "UNIPAZ (red interna)", "frecuencia": "-"},
 }
 
 # Colores por departamento para el mapa
@@ -34,6 +40,7 @@ COLORES_DEPTO = {
     "Docentes":       "#4daafc",  # azul
     "Administrativo": "#6ccb5f",  # verde
     "Estudiantes":    "#ff9f43",  # naranja
+    "UNIPAZ (red interna)": "#9d6ccb",  # morado
 }
 
 
@@ -161,8 +168,14 @@ def obtener_subred(ip):
 # =============================================================================
 # Geolocalizacion principal
 # =============================================================================
-def obtener_ubicacion_ip(ip):
-    hostname = obtener_hostname_ip(ip)
+def obtener_ubicacion_ip(ip, resolver_hostname=True):
+    """Geolocaliza una IP.
+
+    resolver_hostname=False omite el DNS inverso/ARP (que puede tardar varios
+    segundos por IP): lo usa el mapa de 'ultimos 10 ataques', donde el hostname
+    no se muestra y 10 IPs secuenciales harian lento el refresco.
+    """
+    hostname = obtener_hostname_ip(ip) if resolver_hostname else ""
     subred = obtener_subred(ip)
 
     # 1) Clasificar en red UNIPAZ conocida
@@ -225,11 +238,13 @@ def _consultar_api_geo(ip):
                 "org": data.get("org", "Desconocido"),
                 "as": data.get("as", "Desconocido")
             }
-        else:
-            datos = _geo_vacio()
+            # Solo se cachean EXITOS: si un fallo quedara en cache, una IP
+            # quedaria "Desconocida" una hora entera por un corte transitorio.
+            _cache[ip] = (ahora, datos)
+            return datos.copy()
 
-        _cache[ip] = (ahora, datos)
-        return datos.copy()
+        # ip-api rechazo la consulta (rango privado, cuota...) -> sin cache
+        return _geo_vacio()
 
     except Exception as e:
         logger.warning(f"Error geolocalizando IP {ip}: {e}")
