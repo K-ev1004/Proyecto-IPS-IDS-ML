@@ -1,0 +1,7 @@
+M0 linea base — metricas v6 (generado 2026-11-04T17:43:38+00:00)
+corpus: 276,098 filas / 72.0 h
+FP/dia canal ML v5 (vivo C3): 92,004.5
+SQLiGuard replay: 275,835 alertas, 91,924.1 FP/dia, precision=0.00025, recall=1.0
+determinismo replay vs vivo: 275744/275744
+vectores cero: 275,102 (alerta 275,102)
+latencia: 0.003 ms/prediccion
