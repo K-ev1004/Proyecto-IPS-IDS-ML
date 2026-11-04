@@ -15,6 +15,10 @@ Documentación organizada según el modelo **Diátaxis** (cuatro necesidades del
 docs/
 ├── README.md                  # Este índice
 ├── CHANGELOG.md               # Historial de cambios verificado
+├── LANZAMIENTO_PRODUCCION.md  # Cómo lanzar/detener/configurar el IDS en producción
+├── INFORME_C3_DATOS.md        # Análisis de la corrida C3 (72 h) y por qué el ML salió de alertas
+├── PLAN_LANZAMIENTO_V5.md     # Plan de fases C1→C4 y addendum post-C3
+├── RUNBOOK_C3.md              # Runbook de observación 72 h y validación heurística
 ├── academico/                 # Documentos de la tesis (docx/pdf/xlsx/tex)
 ├── adr/                       # Registros de decisiones de arquitectura
 │   ├── 0001-pipeline-datos-v5.md
