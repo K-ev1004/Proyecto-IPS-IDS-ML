@@ -5,6 +5,31 @@
 
 ## Última entrada
 
+[34] M5 LANZADA: FASE SOMBRA EN TRÁFICO REAL — GUI VISIBLE Y A PRUEBA DE APAGONES
+     - Tarea programada "IDS-Lab-M5-V6" (al iniciar sesión, usuario): llama a
+       scripts/lanzar_gui_v6.bat -> abre la GUI del laboratorio (interfasc.py,
+       rama ml-v6) con captura automática. Si el servidor se apaga: al volver
+       la sesión, la GUI se abre sola y la captura continúa.
+     - Qué nada se pierde: la BD del laboratorio (intrusiones_v5.db) persiste
+       cada ataque y cada ml_candidato con commit inmediato (SQLite); el
+       run_id "lab-m5-shadow" sella la fase sombra y permite comparar
+       arranques. La carpeta del laboratorio es la rama ml-v6; producción
+       (main) no se toca.
+     - Configuración de la corrida: IDS_IFACE=Ethernet (SPAN), alertas
+       heurísticas ON (nivel 1, para comparar ML vs heurística día a día),
+       bloqueo OFF, IDS_ML_V6=1, IDS_ML_SOMBRA=1 (todo candidato a
+       ml_candidatos, nada del ML notifica), IDS_AUTO_INICIAR=1, duración 0
+       (hasta apagado; el task la relanza).
+     - Pre-vuelo 25 s sin GUI: modelos v6 cargados (sombra=SI, 7 umbrales por
+       clase + detector payload), sin crash con tráfico real.
+     - Primeros minutos: ml_candidatos ya acumulando candidatos (todos
+       "descartado" bajo la matriz conservadora — correcto).
+     - Protocolo de revisión: diario, comparar candidatos/día del ML vs
+       alertas heurísticas; puerta M5 = FP reales <= 5/día y sin
+       contradicciones sin explicar durante 3-7 días.
+     - Pendiente M4 (recordatorio): contador "ML v6 (sombra)" en la GUI.
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [33] M4 ARBITRAJE Y MODO SOMBRA: MATRIZ DE POLÍTICA, ML_CANDIDATOS, T7 (PUERTA M4 CUMPLIDA)
      - Diseño elegido con el usuario: matriz de decisión por COMBINACIÓN DE
        FUENTE (mejor que el arbitraje fijo de la guía §5.3) + severidad que

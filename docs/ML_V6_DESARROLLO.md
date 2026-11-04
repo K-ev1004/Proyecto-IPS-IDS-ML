@@ -347,13 +347,16 @@ conservada, sin alerta). Si la hay → alerta con `origen='ml+heuristica'`.
 - [x] Grabber de HTTP benigno UNIPAZ: descartado tras medir R6 (UNIPAZ es 99,998 % no-HTTP-plano → inútil para M2). Código versionado con tests; tarea NO registrada. M2 usa solo CSIC 2010
 - [ ] M2 → M3 → M4 → M5 → M6 según puertas de §6
 
-### Progreso real (2026-11-04): M0-M4 completos
+### Progreso real (2026-11-04): M0-M4 completos · M5 CORRIENDO
 - M0 ✅ línea base + fuga · M1 ✅ FlowTracker v6 + dataset v6 · M2 ✅ payload
   detector (P=0,9977) · M3 ✅ CatBoost v6 + umbrales por clase · M4 ✅
   matriz de política + ml_candidatos + arbitraje + T7 (6/6 gates PASS)
+- M5 ✅ LANZADA: tarea "IDS-Lab-M5-V6" (al iniciar sesión) abre la GUI del
+  laboratorio con IDS_ML_V6=1 + sombra + run_id lab-m5-shadow; BD con
+  commit inmediato (a prueba de apagones); revisión diaria 3-7 días,
+  puerta: FP reales ≤ 5/día
 - Pendiente M4: contador sombra en la GUI
-- Siguiente: M5 (fase sombra en tráfico real, 3-7 días, FP reales ≤ 5/día)
-  → M6 (reingreso por clase con la matriz por_clase)
+- Siguiente: M6 (reingreso por clase con la matriz por_clase)
 
 ## 10. Definition of Done (v6 lista)
 
