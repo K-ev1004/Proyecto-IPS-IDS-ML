@@ -23,6 +23,27 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 RANDOM_STATE = 42
 
+# ---- V6 (M1): features nuevas que SÍ existen en los CSV de CIC -------------
+# - flow_iat_mean/std, init_win_bytes: mismas magnitudes que FlowTracker v6
+#   (flujos_red.py) para paridad entrena-en-vivo.
+# - Active/Idle: solo existen en CIC (FlowTracker v6 no las calcula en vivo);
+#   quedan en el dataset para el ablation, marcadas CIC-only.
+# - NO se inventan: dir_init real, unipaz_src/dst y src_port_svc NO existen en
+#   los CSV (solo traen puerto destino); llegan con el tráfico real de la fase
+#   sombra (M5) para el fine-tuning. docs/ML_V6_DESARROLLO.md §4.4.
+FEATURES_V6_EXTRA = ['Flow IAT Mean', 'Flow IAT Std', 'Active Mean',
+                     'Active Std', 'Idle Mean', 'Idle Std']
+
+# Columnas de window: nombre distinto por fuente; ambas son la window TCP del
+# flujo forward (el que inicia), equivalente a init_win_bytes del tracker v6.
+RENOMBRES_WINDOW = ['Init Fwd Win Byts', 'Init_Win_bytes_forward']
+
+# Puertos de servicio (igual que flujos_red.py/ clasificar_c3.py): base de la
+# feature DERIVADA dst_port_svc, determinista desde Dst Port.
+PUERTOS_SERVICIO = {20, 21, 22, 23, 25, 53, 69, 80, 110, 123, 143, 443, 445,
+                    465, 587, 993, 995, 3306, 3389, 5223, 5228, 7680, 8080,
+                    8443}
+
 FEATURES_V4 = [
     'Dst Port', 'Protocol', 'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts',
     'TotLen Fwd Pkts', 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min',
@@ -106,6 +127,10 @@ def procesar_chunk(chunk):
     chunk = normalizar_columnas(chunk)
     if 'Destination Port' in chunk.columns:
         chunk = chunk.rename(columns={'Destination Port': 'Dst Port'})
+    # V6: unificar el nombre de la window TCP forward entre 2017 y 2018
+    for col_win in RENOMBRES_WINDOW:
+        if col_win in chunk.columns:
+            chunk = chunk.rename(columns={col_win: 'init_win_bytes'})
     
     if 'Label' in chunk.columns:
         chunk = chunk[chunk['Label'] != 'Label']
@@ -114,12 +139,27 @@ def procesar_chunk(chunk):
         chunk['Label_UNIPAZ'] = chunk['Label'].map(MAPEO_CLASES)
         chunk = chunk.dropna(subset=['Label_UNIPAZ'])
         
-        for f in FEATURES_V4:
+        for f in FEATURES_V4 + FEATURES_V6_EXTRA + ['init_win_bytes']:
             if f not in chunk.columns:
                 chunk[f] = 0
                 
-        chunk = chunk[FEATURES_V4 + ['Label_UNIPAZ']]
-        for col in FEATURES_V4:
+        # ---- V6: features DERIVADAS (deterministas, paridad con el tracker) ----
+        # dst_port_svc: puerto de servicio visto como destino
+        chunk['dst_port_svc'] = (
+            (chunk['Dst Port'] < 1024)
+            | chunk['Dst Port'].isin(PUERTOS_SERVICIO)).astype('float64')
+        # fwd_bwd_ratio: dirección de paquetes (el defecto nº 1 era no tenerla)
+        chunk['fwd_bwd_ratio'] = (
+            chunk['Tot Fwd Pkts'] / chunk['Tot Bwd Pkts'].clip(lower=1))
+        # bytes_per_pkt: tamaño medio por paquete del flujo
+        chunk['bytes_per_pkt'] = (
+            (chunk['TotLen Fwd Pkts'] + chunk['TotLen Bwd Pkts'])
+            / (chunk['Tot Fwd Pkts'] + chunk['Tot Bwd Pkts']).clip(lower=1))
+
+        chunk = chunk[FEATURES_V4 + FEATURES_V6_EXTRA
+                      + ['init_win_bytes', 'dst_port_svc', 'fwd_bwd_ratio',
+                         'bytes_per_pkt', 'Label_UNIPAZ']]
+        for col in FEATURES_V4 + FEATURES_V6_EXTRA + ['init_win_bytes']:
             chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
         return chunk
     return pd.DataFrame()
@@ -134,7 +174,8 @@ def procesar_carpeta(carpeta_path, origen_nombre):
     archivos = [f for f in os.listdir(carpeta_path) if f.endswith('.csv') or f.endswith('.parquet')]
     chunks_procesados = []
     
-    posibles_features = FEATURES_V4 + ['Label', 'Destination Port']
+    posibles_features = (FEATURES_V4 + FEATURES_V6_EXTRA + ['init_win_bytes']
+                         + RENOMBRES_WINDOW + ['Label', 'Destination Port'])
     
     for archivo in tqdm(archivos, desc=f"Procesando {origen_nombre}", unit="archivo", ncols=100):
         ruta = os.path.join(carpeta_path, archivo)
@@ -194,7 +235,10 @@ def aplicar_downsampling(df):
 
 if __name__ == "__main__":
     print("======================================================")
-    print(" GENERADOR DE DATASET GLOBAL (CIC 2017+2018+2019)")
+    print(" GENERADOR DE DATASET GLOBAL v6 (CIC 2017+2018+2019)")
+    print("  24 features v4 + IAT/Window/Active/Idle + 3 derivadas v6")
+    print("  (dir_init real y unipaz_src/dst NO van: no existen en CIC;")
+    print("   llegan del trafico real en la fase sombra M5)")
     print("======================================================")
     
     df_2017 = procesar_carpeta(DIR_2017, "CIC-IDS2017")
@@ -215,15 +259,16 @@ if __name__ == "__main__":
     df_total = aplicar_downsampling(df_total)
     df_total = df_total.sample(frac=1, random_state=RANDOM_STATE).reset_index(drop=True)
     
-    ruta_csv = os.path.join(OUTPUT_DIR, "dataset_global_unipaz_v5.csv")
+    ruta_csv = os.path.join(OUTPUT_DIR, "dataset_global_unipaz_v6.csv")
     print(f"\n[*] Guardando dataset definitivo en: {ruta_csv}")
     df_total.to_csv(ruta_csv, index=False)
     
     print("\n======================================================")
-    print(" RESUMEN FINAL DEL DATASET v5")
+    print(" RESUMEN FINAL DEL DATASET v6")
     print("======================================================")
     resumen = df_total['Label_UNIPAZ'].value_counts()
     print(resumen)
     sql = resumen.get('Inyeccion_SQL', 0)
-    print(f"\n  [!] Inyeccion_SQL en v5: {sql:,} (objetivo >3000, recuperado del bug U+FFFD de 2017)")
-    print("\n  [OK] Dataset global v5 generado exitosamente. Listo para CEREBRO_V5.")
+    print(f"\n  [!] Inyeccion_SQL en v6: {sql:,}")
+    print(f"\n  Features del dataset v6: {len(df_total.columns) - 1}")
+    print("\n  [OK] Dataset global v6 generado. Listo para el entrenamiento M3.")

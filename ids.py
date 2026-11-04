@@ -1453,12 +1453,15 @@ def procesar_paquete(packet):
             puerto_src = 0
             puerto_dst = 0
             tcp_flags = None
-            
+            tcp_window = None
+
             if packet.haslayer(scapy.TCP):
                 protocolo = 'TCP'
                 puerto_src = packet[scapy.TCP].sport
                 puerto_dst = packet[scapy.TCP].dport
                 tcp_flags = str(packet[scapy.TCP].flags)
+                # V6: window del SYN de inicio -> feature init_win_bytes
+                tcp_window = packet[scapy.TCP].window
             elif packet.haslayer(scapy.UDP):
                 protocolo = 'UDP'
                 puerto_src = packet[scapy.UDP].sport
@@ -1482,7 +1485,8 @@ def procesar_paquete(packet):
                     and not _es_destino_no_unicast(ip_dst)):
                 flow_tracker.procesar_paquete(
                     ip_src, ip_dst, puerto_src, puerto_dst,
-                    protocolo, packet_len, tcp_flags, timestamp
+                    protocolo, packet_len, tcp_flags, timestamp,
+                    tcp_window=tcp_window
                 )
 
             # Heurística de respaldo (inmediata)
