@@ -142,9 +142,17 @@ def procesar_chunk(chunk):
         for f in FEATURES_V4 + FEATURES_V6_EXTRA + ['init_win_bytes']:
             if f not in chunk.columns:
                 chunk[f] = 0
-                
+
+        chunk = chunk[FEATURES_V4 + FEATURES_V6_EXTRA
+                      + ['init_win_bytes', 'Label_UNIPAZ']]
+        # Coaccionar ANTES de las derivadas: los CSV de CIC traen filas de
+        # cabecera repetida que dejan la columna object y un '<' entre str
+        # e int revienta el chunk entero (02-16/02-28/03-01 en la v1 de M1).
+        for col in FEATURES_V4 + FEATURES_V6_EXTRA + ['init_win_bytes']:
+            chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
+
         # ---- V6: features DERIVADAS (deterministas, paridad con el tracker) ----
-        # dst_port_svc: puerto de servicio visto como destino
+        # dst_port_svc: puerto de servicio visto como destino (NaN -> False -> 0)
         chunk['dst_port_svc'] = (
             (chunk['Dst Port'] < 1024)
             | chunk['Dst Port'].isin(PUERTOS_SERVICIO)).astype('float64')
@@ -156,17 +164,12 @@ def procesar_chunk(chunk):
             (chunk['TotLen Fwd Pkts'] + chunk['TotLen Bwd Pkts'])
             / (chunk['Tot Fwd Pkts'] + chunk['Tot Bwd Pkts']).clip(lower=1))
 
-        chunk = chunk[FEATURES_V4 + FEATURES_V6_EXTRA
-                      + ['init_win_bytes', 'dst_port_svc', 'fwd_bwd_ratio',
-                         'bytes_per_pkt', 'Label_UNIPAZ']]
-        for col in FEATURES_V4 + FEATURES_V6_EXTRA + ['init_win_bytes']:
-            chunk[col] = pd.to_numeric(chunk[col], errors='coerce')
         return chunk
     return pd.DataFrame()
 
 def procesar_carpeta(carpeta_path, origen_nombre):
     print(f"\n[*] Procesando dataset: {origen_nombre} ({carpeta_path})")
-    
+
     if not os.path.exists(carpeta_path):
         print(f"  [!] La carpeta {carpeta_path} no existe. Saltando...")
         return pd.DataFrame()
@@ -207,6 +210,9 @@ def procesar_carpeta(carpeta_path, origen_nombre):
         return pd.DataFrame()
         
     df_consolidado = pd.concat(chunks_procesados, ignore_index=True)
+    # V6: columna 'fuente' para el holdout por origen del protocolo de
+    # evaluacion (entrenar 2018->validar 2017 y viceversa, docs §6.2).
+    df_consolidado['fuente'] = origen_nombre
     del chunks_procesados
     gc.collect()
     

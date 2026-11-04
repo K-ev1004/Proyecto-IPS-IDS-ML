@@ -90,13 +90,14 @@
        repetidas de los CSV dejaban la columna object y tumbaban 3 archivos:
        02-16/02-28/03-01; recuperadas 1.242.745 filas de
        SlowHTTPTest/Hulk/Infiltration/benignos).
-     - dataset_global_unipaz_v6.csv generado: 2.720.533 filas x 33 features.
-       Distribucion: Normal 1.500.000, DDoS_Distribuido 1.000.000,
+     - dataset_global_unipaz_v6.csv generado: 3.720.533 filas x 33 features
+       (+fuente). Distribucion: Normal 1.500.000, DDoS_Distribuido 1.000.000,
        Posible_Exploit 556.765, SYN_Flood 500.000, Port_Scanner 158.930,
        Inyeccion_SQL 3.108, UDP_Flood 1.730 (este ultimo sigue corto: entra
        mas con CIC-DDoS2019 si M3 lo pide).
      - Sello del dataset: entrenar/resultados/dataset_v6_sha256.txt
-       (42db313c925c5d55ac3f16565f08693580ca48adde9640cfdac0377105df0306).
+       (93f18d524f8774a838ff4ac5ff3faf61affc21e293d7e8d590bc9060bf1582e5,
+       regenerado en M3 con la columna 'fuente' para el holdout por origen).
      - dir_init real y unipaz_src/dst NO van en el dataset (no existen en
        CIC): llegan del trafico real en la fase sombra M5, como dice la guia.
      - NO se toca produccion (main): todo el trabajo en rama ml-v6.
