@@ -173,5 +173,12 @@ con `evidencia_json`, y `metricas_escaneo` con muestras suficientes para fijar
 el P99. Si aparece una alerta inesperada, se documenta como FP y se corrige
 antes de abrir C4.
 
+Sobre `muestras_scan`: la tabla guarda observaciones cuando un par alcanza la
+mitad del umbral (25 puertos externos / 12 internos / 10 destinos horizontales).
+Si tras la validación sigue en 0, es un resultado válido y deseable: significa
+que el tráfico normal **nunca se acerca** a la mitad del umbral, así que el
+umbral actual tiene margen sobrado y no hace falta bajarlo. Si aparecen
+muestras, `calibrar_escaneo.py` da el P99 de esa cola y el margen exacto.
+
 La BD de la validación se crea nueva en `intrusiones_v5.db`; el corpus C3 queda
 en `evidencia/db_archive/` con su `.ficha.json` y su SHA-256.
