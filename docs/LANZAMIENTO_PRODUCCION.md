@@ -20,8 +20,18 @@ lanzarlo, verificarlo, detenerlo y cambiar su configuración sin tocar código.
 | `IDS_IFACE` | `Ethernet` | Realtek 2.5GbE donde entra el SPAN (IP por DHCP, hoy `172.10.12.77`) |
 | Umbrales de escaneo | 50 ext / 25 int / 20 horiz | Validados: en 72 h el tráfico normal nunca los alcanzó |
 
-Estos valores viven en `scripts\lanzar_observacion.bat`. **No hay que tocar
+Estos valores viven en `scripts\lanzar_gui.bat`. **No hay que tocar
 `ids.py`** para cambiar ninguno.
+
+**Cómo corre desde 2026-11-04:** la producción es la **GUI visible**
+(`interfasc.py`), que es a la vez el motor: la ventana muestra dashboard,
+eventos, bloqueos y mapa, y **arranca la captura sola** al abrirse
+(`IDS_AUTO_INICIAR=1`). `scripts\lanzar_observacion.bat` (el que llama la
+tarea programada) delega en `lanzar_gui.bat`.
+
+> **Importante:** la ventana es el motor. **Minimizar no afecta**; **cerrarla
+> detiene la captura** (al cerrarse apaga el sniffer limpiamente). La tarea
+> programada la vuelve a lanzar en el próximo inicio de sesión.
 
 ---
 
@@ -32,36 +42,40 @@ Estos valores viven en `scripts\lanzar_observacion.bat`. **No hay que tocar
 Existe la tarea programada **`IDS-Observacion-C3`** que lanza el `.bat`
 **al iniciar sesión** en el servidor. Es decir:
 
-> Encender el servidor → iniciar sesión → el IDS arranca solo.
+> Encender el servidor → iniciar sesión → se abre la GUI y la captura
+> arranca sola (sin clicks).
 
 Comprobar que quedó vivo (después de ~40 s):
 
 ```powershell
-Get-Content logs_ciberseguridad\corrida_prod-v5.log -Tail 5
+Get-Content logs_ciberseguridad\gui_prod-v5.log -Tail 5
 ```
 
-Debe verse `AsyncSniffer arrancado` y una línea `ESTADO` con `pps` mayor que 0.
+Debe verse `[OK] AsyncSniffer arrancado correctamente.` Y en la ventana: la
+insignia de estado `Interfaz: LAN | ● Running` y el contador de paquetes
+subiendo.
 
-### Opción B — A mano (ventana oculta, igual que la tarea)
+### Opción B — A mano (consola oculta, igual que la tarea)
 
 ```powershell
 cd "C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML"
 Start-Process -FilePath "cmd.exe" -ArgumentList '/c', 'scripts\lanzar_observacion.bat' -WindowStyle Hidden
 ```
 
-### Opción C — A mano con consola visible (para pruebas)
+### Opción C — Headless, sin GUI (servidor sin sesión interactiva)
 
-Muestra el motor en vivo y se detiene con `Ctrl+C`:
+Mismo motor sin ventana ni dashboard, con línea de estado horaria:
 
 ```powershell
 cd "C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML"
-.\scripts\lanzar_observacion.bat
+$env:IDS_MODO_OBSERVACION=0; $env:IDS_ML_ALERTAS=0; $env:IDS_RUN_ID="prod-headless"
+$env:IDS_IFACE="Ethernet"; $env:IDS_DURACION_H=0
+.\venv\Scripts\python.exe scripts\corrida_observacion.py
 ```
 
 > **Regla de oro:** un solo proceso escribiendo la BD. Si lanzas a mano,
 > verifica antes que no haya otro `python` corriendo
-> (`Get-Process python`). No abrir la GUI en el servidor mientras el motor
-> corre: la GUI abre la misma BD.
+> (`Get-Process python`). No abrir una segunda instancia de la GUI.
 
 ---
 
@@ -69,20 +83,12 @@ cd "C:\Users\Ciber-UNIPAZ\Desktop\Version 4 Ultra\Proyecto-IPS-IDBS-ML"
 
 ### 3.1 Que captura
 
-```powershell
-Get-Content logs_ciberseguridad\corrida_prod-v5.log -Tail 5 -Wait
-```
+- **En la ventana**: insignia `● Running`, "Paquetes por segundo" subiendo y
+  gráfica de tráfico moviéndose (el dashboard se actualiza cada ~1 s).
+- **En el log** (`logs_ciberseguridad\gui_prod-v5.log`): debe estar
+  `[OK] AsyncSniffer arrancado correctamente.` y cada alerta que se emite.
 
-Línea esperada cada hora (y a los 30 s del arranque):
-
-```
-[2026-11-04 16:44:42] ESTADO pps~237 | ventanas=2 | horizontales=2 |
-eventos_bd=0 (con_evidencia: 0, con_features: 0) | muestras_scan=0
-```
-
-- `pps` > 0 → el SPAN está entrando. Si es `0` estable, revisar el cable/espejo.
-- `eventos_bd=0` es **bueno**: significa cero falsos positivos de fondo.
-- Conexión de oro: los eventos crecen **solo** cuando pasa algo real.
+Conexión de oro: los eventos crecen **solo** cuando pasa algo real.
 
 ### 3.2 Que detecta (prueba con nmap, desde OTRO equipo)
 
@@ -103,11 +109,12 @@ Y debe llegar el mensaje a Telegram. Ver la alerta en la BD:
 ## 4. Detenerlo
 
 ```powershell
-# Si lo lanzó la tarea programada (sesión iniciada):
+# Cerrar la ventana de la GUI, o:
 Stop-Process -Name python -Force        # detiene el motor
 
 # La BD queda íntegra: cada inserción se confirma al momento.
-# Tras un reinicio del servidor, la tarea lo vuelve a lanzar sola.
+# Al cerrar la GUI, el sniffer se apaga limpio (closeEvent).
+# Tras un reinicio del servidor, la tarea la vuelve a lanzar sola.
 ```
 
 Para que NO arranque al iniciar sesión (p. ej. mantenimiento largo):
@@ -140,7 +147,9 @@ Criterio usado para los umbrales (P99 + 20 %): ver `docs/RUNBOOK_C3.md` §7.
 | Síntoma | Causa | Solución |
 |---|---|---|
 | Tarea con `LastTaskResult: 101` | El venv usa Python de la Microsoft Store (por usuario); no corre como SYSTEM | Las tareas corren **al iniciar sesión** como tu usuario: dejar sesión iniciada |
-| Tras reiniciar no hay captura | Nadie inició sesión (el disparador es "al iniciar sesión") | Iniciar sesión; para no teclear contraseña, `netplwiz` → desmarcar la casilla |
+| Tras reiniciar no se abre la GUI | Nadie inició sesión (el disparador es "al iniciar sesión") | Iniciar sesión; para no teclear contraseña, `netplwiz` → desmarcar la casilla |
+| Cerré la ventana y ya no hay captura | La GUI es el motor: cerrarla detiene el sniffer | Relanzar (`scripts\lanzar_observacion.bat`); mejor minimizar que cerrar |
+| La GUI abre pero dice `○ Stopped` | El auto-inicio no encontró la interfaz | Verificar que `IDS_IFACE=Ethernet` en `lanzar_gui.bat` y pulsar "Iniciar monitoreo" |
 | `eventos_bd=0` con `pps > 0` | Normal: el tráfico propio del sensor se excluye (`MI_IP`) | No es error; la señal viva es `pps > 0` |
 | `Acceso denegado` al consultar la tarea | Shell sin privilegios de administrador | Abrir PowerShell como administrador |
 | No llega Telegram pero hay alertas en BD | Sin internet o token vencido | La alerta ya está en la BD con evidencia; revisar salida del log |
@@ -159,6 +168,6 @@ Criterio usado para los umbrales (P99 + 20 %): ver `docs/RUNBOOK_C3.md` §7.
 
 **Dónde queda la evidencia:** `intrusiones_v5.db` (alertas con
 `evidencia_json`), `metricas_escaneo` (muestras de calibración bajo umbral),
-`logs_ciberseguridad\corrida_prod-v5.log` (pulso horario) y
+`logs_ciberseguridad\gui_prod-v5.log` (arranque del motor y alertas) y
 `backups\` (copias diarias). El corpus C3 de 72 h está archivado con su hash
 en `evidencia\db_archive\`.

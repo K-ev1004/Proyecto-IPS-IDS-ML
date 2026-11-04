@@ -1716,6 +1716,29 @@ class IDSInterface(FluentWindow):
         self.boton_iniciar.setEnabled(True)
         self.boton_detener.setEnabled(False)
 
+    def _auto_iniciar(self):
+        """Auto-arranque de la captura al abrir la GUI (produccion desatendida).
+
+        Activado con IDS_AUTO_INICIAR=1 (lo fija scripts/lanzar_gui.bat): la
+        tarea programada abre la GUI al iniciar sesion y la captura debe
+        quedar activa sin clicks. La interfaz se toma de IDS_IFACE; si no se
+        encuentra en la lista, se usa la seleccion por defecto (Ethernet
+        aparece primero por construccion en listar_interfaces_captura).
+        """
+        try:
+            objetivo = (os.environ.get('IDS_IFACE') or '').strip().lower()
+            if objetivo and hasattr(self, 'combo_iface'):
+                for i in range(self.combo_iface.count()):
+                    texto = self.combo_iface.itemText(i)
+                    real = self._IFACE_REVERSE.get(texto, texto)
+                    if real.lower() == objetivo or objetivo in real.lower():
+                        self.combo_iface.setCurrentIndex(i)
+                        break
+            logging.info("Auto-inicio de monitoreo (IDS_AUTO_INICIAR=1)")
+            self.iniciar_monitoreo()
+        except Exception as e:
+            logging.error(f"Auto-inicio de monitoreo fallo: {e}")
+
     def limpiar_tabla(self):
         with data_lock:
             eventos_detectados.clear()
@@ -2168,7 +2191,12 @@ if __name__ == "__main__":
             _export()
         except Exception as e:
             logging.error(f"Error inicial exportando logs: {e}")
-        
+
+        # Produccion desatendida: con IDS_AUTO_INICIAR=1 la captura arranca
+        # sola (la GUI es el motor; cerrar la ventana la detiene).
+        if os.environ.get('IDS_AUTO_INICIAR', '0') == '1':
+            QTimer.singleShot(2000, ventana._auto_iniciar)
+
         sys.exit(app.exec_())
     except Exception as e:
         logging.error(f"Error en la ejecución principal: {e}")
