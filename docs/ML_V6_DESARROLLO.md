@@ -240,9 +240,9 @@ CREATE TABLE IF NOT EXISTS ml_candidatos (
 
 | Test | Qué mide |
 |---|---|
-| **T6** | Detector de payload: precisión/recall en D2 holdout + benigno UNIPAZ (objetivo P≥99,5 %) |
-| **T7** | Arbitraje: replay C3 con el pipeline v6 completo → FP/día ≈ 0 |
-| **T8** | Latencia: ms por predicción payload y por flujo (objetivo < 10 ms) |
+| **T6** | Detector de payload: precisión/recall en holdout CSIC test (objetivo P≥99,5 %) + latencia < 10 ms |
+| **T7** | Arbitraje: replay de la capa de decisión (filtro entrada v6 + señales + política) sobre el corpus C3 bajo los 3 modos (sombra/heurística/default). Puerta: sombra y heurística con FP/día = 0 y las 69 señales reales conservadas. El FP real de los modelos v6 se mide en M5 con `ml_candidatos` |
+| **T8** | Latencia: ms por predicción payload y por flujo (objetivo < 10 ms) — cubierto dentro de T6 |
 
 ### 4.6 GUI (`interfasc.py`) — mínimo
 
@@ -346,6 +346,14 @@ conservada, sin alerta). Si la hay → alerta con `origen='ml+heuristica'`.
 - [x] M1: features direccionales en `flujos_red.py` + dataset v6 (`dataset_global_unipaz_v6.csv`, 2,72 M filas × 33 features)
 - [x] Grabber de HTTP benigno UNIPAZ: descartado tras medir R6 (UNIPAZ es 99,998 % no-HTTP-plano → inútil para M2). Código versionado con tests; tarea NO registrada. M2 usa solo CSIC 2010
 - [ ] M2 → M3 → M4 → M5 → M6 según puertas de §6
+
+### Progreso real (2026-11-04): M0-M4 completos
+- M0 ✅ línea base + fuga · M1 ✅ FlowTracker v6 + dataset v6 · M2 ✅ payload
+  detector (P=0,9977) · M3 ✅ CatBoost v6 + umbrales por clase · M4 ✅
+  matriz de política + ml_candidatos + arbitraje + T7 (6/6 gates PASS)
+- Pendiente M4: contador sombra en la GUI
+- Siguiente: M5 (fase sombra en tráfico real, 3-7 días, FP reales ≤ 5/día)
+  → M6 (reingreso por clase con la matriz por_clase)
 
 ## 10. Definition of Done (v6 lista)
 

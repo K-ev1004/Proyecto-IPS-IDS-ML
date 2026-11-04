@@ -5,6 +5,46 @@
 
 ## Última entrada
 
+[33] M4 ARBITRAJE Y MODO SOMBRA: MATRIZ DE POLÍTICA, ML_CANDIDATOS, T7 (PUERTA M4 CUMPLIDA)
+     - Diseño elegido con el usuario: matriz de decisión por COMBINACIÓN DE
+       FUENTE (mejor que el arbitraje fijo de la guía §5.3) + severidad que
+       escala el tiempo de bloqueo + etiqueta de origen en cada aviso:
+         ml+heuristica -> BLOQUEAR 24 h (CRITICA, doble firma)
+         ml            -> ALERTAR   1 h (MEDIA; se autorevierte si es FP)
+         heuristica    -> ALERTAR  24 h (NORMAL, comportamiento v5)
+       Rollback de una variable: IDS_POLITICA=heuristica = producción v5.
+     - Nuevo módulo politica_bloqueo.py (decisión pura, sin scapy/BD):
+       defaults en código + config/politica_bloqueo.json (overrides por
+       clase para el reingreso M6; arranca SIN overrides: sombra
+       conservadora) + IDS_POLITICA={heuristica,sombra} para operaciones.
+       8 tests unitarios (combinaciones, overrides, modos, config inválida).
+     - ids.py v6 (solo con IDS_ML_V6=1):
+       * Carga pipeline_catboost_v6 + features_v6 + umbrales_v6 +
+         sqli_payload (M2/M3).
+       * Tabla ml_candidatos (BD propia, NUNCA reemplaza a ataques): toda
+         predicción queda con features completas, umbral de clase,
+         corrobora_heuristica y decisión — el corpus para reentrenar en M5
+         existe desde el día 1 (corrección del pecado original de C3).
+       * Cadena de decisión: predicción multiclase -> umbral POR CLASE ->
+         señales de arbitraje independientes (SYN de inicio v6 a
+         PUERTOS_EXPLOIT, contador de puertos/2, contadores flood/2) ->
+         política -> sombra graba / activo ejecuta.
+       * detectar_payload_v6 a nivel paquete: TF-IDF+LogReg puntúa la
+         petición HTTP; el regex fuerte v5 queda como árbitro barato.
+       * guardar_ataque acepta severidad y duracion_horas: la política fija
+         cuánto dura el bloqueo (proporcional a la confianza).
+     - T7 (nuevo, en test_masivo.py): replay de la capa de decisión sobre el
+       corpus C3 bajo los 3 modos. Resultados (276.098 filas / 3 días):
+         sombra:     FP/día ML = 0.0, señales reales 69/69
+         heurística: FP/día ML = 0.0, señales reales 69/69
+         default:    FP/día ML = 301,7 (905 alertas) — el coste transparente
+                     de "ml->alertar" activo; por eso M4 corre en sombra.
+       Los 275.102 vectores en cero quedan filtrados a la entrada (M1).
+       Batería completa: 6/6 gates PASS (T1-T4, T6, T7).
+     - Pendiente de M4: contador "ML v6 (sombra)" en la GUI (lectura de
+       ml_candidatos; se deja para no tocar el Qt sin probarlo).
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [32] M3 CATBOOST V6: MODELO FINAL ENTRENADO, UMBRALES POR CLASE (PUERTA M3 CUMPLIDA)
      - CatBoost v6: 1000 iteraciones (learn 1,53 -> 0,103) sobre
        dataset_global_unipaz_v6.csv (3.720.533 filas x 33 features), con

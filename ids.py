@@ -351,6 +351,44 @@ if not ML_ALERTAS:
     print("[!] ML en modo instrumentación: NO persiste alertas (IDS_ML_ALERTAS=0). "
           "La detección activa es heurística.")
 
+# =============================================================================
+# CARGA DE MODELOS V6 (M2/M3) — activos solo con IDS_ML_V6=1
+# =============================================================================
+# v6 añade DOS detectores (guía ML_V6_DESARROLLO.md §4.2):
+#   - CatBoost v6 (multiclase de flujo, 33 features + umbral POR CLASE)
+#   - Detector de payload (TF-IDF+LogReg sobre la petición HTTP cruda)
+# Modo sombra (IDS_ML_SOMBRA=1, default): toda predicción va a la tabla
+# ml_candidatos; NADA notifica ni bloquea hasta que M5 apruebe la puerta.
+ML_V6 = (os.environ.get('IDS_ML_V6', '0') == '1')
+ML_SOMBRA = (os.environ.get('IDS_ML_SOMBRA', '1') == '1')
+
+modelo_v6 = None
+features_v6 = None
+umbrales_v6 = {}
+payload_bundle = None
+
+if ML_V6:
+    try:
+        modelo_v6 = joblib.load(os.path.join(
+            BASE_DIR, 'Modelos_Entrenados', 'pipeline_catboost_v6.pkl'))
+        features_v6 = joblib.load(os.path.join(
+            BASE_DIR, 'Modelos_Entrenados', 'features_v6.pkl'))
+        umbrales_v6 = joblib.load(os.path.join(
+            BASE_DIR, 'Modelos_Entrenados', 'umbrales_v6.pkl')).get('umbrales', {})
+        _ruta_payload = os.path.join(BASE_DIR, 'Modelos_Entrenados',
+                                     'sqli_payload.pkl')
+        if os.path.exists(_ruta_payload):
+            payload_bundle = joblib.load(_ruta_payload)
+        print(f"[OK] Modelos v6 cargados "
+              f"(sombra={'SI' if ML_SOMBRA else 'NO'}): CatBoost v6 "
+              f"({len(umbrales_v6)} umbrales por clase)"
+              + (" + detector de payload" if payload_bundle else ""))
+    except Exception as e:
+        modelo_v6 = None
+        payload_bundle = None
+        print(f"[!] No se pudieron cargar los modelos v6 ({e}); "
+              "el motor sigue en v5+heurística.")
+
 # Convierte las features CIC del flujo en las features NetFlow que espera
 # SQLiGuard (mismas unidades y orden usados en entrenar_sqli_guard.py).
 def _features_sqli_guard(features_dict):
@@ -423,6 +461,35 @@ INDICES_ATAQUES = (
     "CREATE INDEX IF NOT EXISTS idx_ataques_run  ON ataques(run_id)",
 )
 
+# Tabla ml_candidatos (M4, guía §4.2): TODA predicción del v6 (alerte o no)
+# queda aquí con features COMPLETAS. Resuelve para siempre el problema de C3
+# (solo se guardaba lo ya alertado): desde el día 1 hay corpus de flujos
+# reales con etiqueta de decisión para reentrenar y auditar. Nunca reemplaza
+# a `ataques`: es la tabla de instrumentación del canal ML v6.
+ESQUEMA_ML_CANDIDATOS = '''
+    CREATE TABLE IF NOT EXISTS ml_candidatos (
+        id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_utc                 TEXT NOT NULL,
+        run_id                 TEXT,
+        ip_src                 TEXT,
+        ip_dst                 TEXT,
+        clase_predicha         TEXT,
+        confianza              REAL,
+        umbral_clase           REAL,
+        alertaria              INTEGER,
+        corrobora_heuristica   INTEGER,
+        senal_motivo           TEXT,
+        features_json          TEXT,
+        decision               TEXT
+    )
+'''
+
+INDICES_ML_CANDIDATOS = (
+    "CREATE INDEX IF NOT EXISTS idx_mlc_ts      ON ml_candidatos(ts_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_mlc_clase   ON ml_candidatos(clase_predicha, ts_utc)",
+    "CREATE INDEX IF NOT EXISTS idx_mlc_decision ON ml_candidatos(decision, ts_utc)",
+)
+
 # Columnas v5 que pueden faltar si se abre una base anterior (por ejemplo una
 # copia de la BD de pruebas). En una base nueva no se ejecuta ningún ALTER.
 COLUMNAS_V5 = {
@@ -450,6 +517,13 @@ def crear_tabla_ataques(conn):
             except sqlite3.OperationalError:
                 pass
     for ddl in INDICES_ATAQUES:
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
+    # M4: tabla de candidatos del canal ML v6 (idempotente)
+    cur.execute(ESQUEMA_ML_CANDIDATOS)
+    for ddl in INDICES_ML_CANDIDATOS:
         try:
             cur.execute(ddl)
         except sqlite3.OperationalError:
@@ -541,6 +615,143 @@ def _enviar_alerta_async(mensaje: str):
 # había flujos bloqueados sin registro ML). Ahora AMBOS usan >= UMBRAL_ML.
 UMBRAL_ML = 0.85
 
+# =============================================================================
+# CANAL ML V6 (M4): candidatos, arbitraje y política de bloqueo
+# =============================================================================
+import politica_bloqueo  # noqa: E402
+
+_ultimo_candidato_por_clave = {}  # throttle de persistencia de candidatos
+
+
+def _registrar_candidato_v6(ip_src, ip_dst, clase, confianza, umbral_clase,
+                            alertaria, corrobora, motivo, features_json,
+                            decision):
+    """Persiste en ml_candidatos (la evidencia del canal v6 NUNCA se pierde).
+    Throttle 1 s por (ip, clase): un escaneo no debe inundar la tabla."""
+    clave = (ip_src, clase)
+    ahora = time.time()
+    if ahora - _ultimo_candidato_por_clave.get(clave, 0) < 1.0:
+        return
+    _ultimo_candidato_por_clave[clave] = ahora
+    try:
+        cursor.execute('''
+            INSERT INTO ml_candidatos (ts_utc, run_id, ip_src, ip_dst,
+                clase_predicha, confianza, umbral_clase, alertaria,
+                corrobora_heuristica, senal_motivo, features_json, decision)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (datetime.now(timezone.utc).isoformat(timespec='seconds'), RUN_ID,
+              ip_src, ip_dst, clase, float(confianza), float(umbral_clase),
+              int(alertaria), int(corrobora), motivo, features_json, decision))
+        conn.commit()
+    except Exception as e:
+        print(f"[!] No se pudo registrar ml_candidatos: {e}")
+
+
+def _senales_arbitraje(clase, ip_src, ip_dst, features_dict):
+    """Señales independientes del árbitro por clase (guía §5.3).
+
+    Regla de oro: la señal NO comparte los puntos ciegos del ML — es estado
+    determinista de la conexión (contadores v5, dirección real del SYN v6,
+    puertos de explotación). Devuelve (bool, motivo).
+    """
+    ahora = time.time()
+    try:
+        if clase == 'Posible_Exploit':
+            puerto = features_dict.get('Dst Port', 0)
+            dir_ok = features_dict.get('dir_init', -1) == 1  # v6: SYN de inicio
+            ok = (puerto in PUERTOS_EXPLOIT and dir_ok
+                  and not _es_destino_no_unicast(ip_dst))
+            return ok, f'SYN de inicio a puerto {puerto} (dir_init=1)'
+
+        if clase == 'Port_Scanner':
+            dq = ventana_scan.get((ip_src, ip_dst))
+            if not dq:
+                return False, 'sin contador de puertos en ventana'
+            puertos = {p for (t, p, _) in dq if ahora - t <= PORT_SCAN_WINDOW_S * 2}
+            umbral = (PORT_SCAN_THRESHOLD_INTERNAL if _es_ip_interna(ip_dst)
+                      else PORT_SCAN_THRESHOLD)
+            ok = len(puertos) >= max(3, umbral // 2)
+            return ok, f'{len(puertos)} puertos distintos (umbral/2={max(3, umbral // 2)})'
+
+        if clase == 'SYN_Flood':
+            umbral = calcular_umbral_dinamico(BASE_THRESHOLD_SYN_FLOOD)
+            n = len(syn_por_src.get(ip_src, []))
+            return (n >= umbral // 2,
+                    f'{n} SYN en ventana (umbral/2={umbral // 2})')
+
+        if clase in ('DDoS_Distribuido', 'UDP_Flood'):
+            base = (BASE_THRESHOLD_DDOS if clase == 'DDoS_Distribuido'
+                    else BASE_THRESHOLD_UDP_FLOOD)
+            umbral = calcular_umbral_dinamico(base)
+            n = len(flood_por_dst.get(ip_dst, []))
+            return (n >= umbral // 2,
+                    f'{n} paquetes hacia destino (umbral/2={umbral // 2})')
+
+        if clase == 'Inyeccion_SQL':
+            # A nivel de flujo no hay payload: la señal la aporta el detector
+            # de payload a nivel de paquete (senal_payload) o el regex fuerte.
+            return False, 'señal de payload se evalúa por paquete'
+    except Exception as e:
+        print(f"[!] arbitraje {clase}: {e}")
+    return False, ''
+
+
+def procesar_candidato_v6(ip_src, ip_dst, features_dict, senal_payload=False,
+                          motivo_payload=''):
+    """Cadena de decisión v6: predicción multiclase -> umbral por clase ->
+    arbitraje -> política -> (sombra: solo ml_candidatos)."""
+    if modelo_v6 is None or features_v6 is None:
+        return
+
+    row = [features_dict.get(f, 0) for f in features_v6]
+    df_in = pd.DataFrame([row], columns=features_v6)
+    proba = modelo_v6.predict_proba(df_in)[0]
+    clases = [str(c) for c in modelo_v6.classes_]
+    idx = int(np.argmax(proba))
+    clase = clases[idx]
+    confianza = float(proba[idx])
+    if clase == 'Normal':
+        metricas_trafico['detecciones_normal'] += 1
+        return
+
+    umbral_clase = float(umbrales_v6.get(clase, 1.0))
+    alertaria = confianza >= umbral_clase
+    corrobora, motivo = _senales_arbitraje(clase, ip_src, ip_dst, features_dict)
+    if senal_payload:
+        corrobora = True
+        motivo = motivo_payload or 'detector de payload confirma'
+
+    decision = politica_bloqueo.decidir(clase, senal_ml=alertaria,
+                                        senal_heuristica=corrobora)
+
+    # Mapeo acción -> columna decision de ml_candidatos
+    decision_txt = {'bloquear': 'alerta', 'alertar': 'alerta',
+                    'grabar': 'descartado'}.get(decision['accion'], 'descartado')
+    _registrar_candidato_v6(
+        ip_src, ip_dst, clase, confianza, umbral_clase, alertaria, corrobora,
+        motivo, json.dumps({k: features_dict.get(k, 0) for k in features_v6}),
+        decision_txt)
+
+    metricas_trafico['v6_candidatos'] = metricas_trafico.get('v6_candidatos', 0) + 1
+    if decision_txt == 'descartado':
+        metricas_trafico['v6_descartados'] = metricas_trafico.get('v6_descartados', 0) + 1
+        return
+
+    if ML_SOMBRA:
+        # Sombras: nada notifica ni bloquea; la decisión vive en ml_candidatos.
+        return
+
+    # Modo activo (M5/M6, puerta cumplida): ejecuta la acción de la política.
+    if decision['accion'] in ('alertar', 'bloquear'):
+        guardar_ataque(
+            ip_src, clase, "TCP/UDP", features_dict.get('Dst Port', 0), ip_dst,
+            flag=f"v6-{decision['etiqueta']}", es_ml_puro=(not corrobora),
+            confianza_ml=confianza,
+            features_json=json.dumps({k: features_dict.get(k, 0) for k in features_v6}),
+            origen=decision['origen'], severidad=decision['severidad'],
+            duracion_horas=politica_bloqueo.duracion_horas(decision))
+        metricas_trafico['v6_alertas'] = metricas_trafico.get('v6_alertas', 0) + 1
+
 def on_flow_ready(ip_src, ip_dst, features_dict):
     """
     Este callback es llamado por flujos_red.py cuando un flujo expira/se completa.
@@ -562,6 +773,13 @@ def on_flow_ready(ip_src, ip_dst, features_dict):
     if not ML_ALERTAS:
         metricas_trafico['detecciones_normal'] += 1
         metricas_trafico['ml_suprimidos'] = metricas_trafico.get('ml_suprimidos', 0) + 1
+        # M4: el canal v6 corre SIEMPRE que esté cargado (sombra por defecto):
+        # alimenta ml_candidatos aunque el v5 siga en instrumentación.
+        if ML_V6 and modelo_v6 is not None:
+            try:
+                procesar_candidato_v6(ip_src, ip_dst, features_dict)
+            except Exception as e:
+                print(f"[X] candidato v6: {e}")
         return
 
     try:
@@ -643,7 +861,8 @@ flow_tracker = FlowTracker(on_flow_ready)
 def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA", flag="N/A",
                    es_ml_puro=False, confianza_ml=0.0, features_json=None, vlan_id=0, ttl=0,
                    packet_size=0, n_puertos=0, n_destinos=0, ventana_s=0, umbral=0,
-                   meta_heuristica=None, forzar=False, origen=None, modo_forzado=None):
+                   meta_heuristica=None, forzar=False, origen=None, modo_forzado=None,
+                   severidad=None, duracion_horas=24):
     """Persiste un evento de detección y decide su notificación/bloqueo.
 
     v5 (lecciones de heuristica.md):
@@ -705,7 +924,13 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
     es_critico = ("exploit" in t_lower or "sql" in t_lower or "flood" in t_lower
                   or "ddos" in t_lower or "escaneo" in t_lower or "scan" in t_lower
                   or "bruteforce" in t_lower)
-    severidad_ips = "CRITICA" if ("exploit" in t_lower or "sql" in t_lower) else "ALTA"
+    # Severidad: la política v6 la fija por combinación de fuente (CRITICA =
+    # ml+heuristica); sin política (heurística pura) rige la regla v5.
+    if severidad is None:
+        severidad_ips = ("CRITICA" if ("exploit" in t_lower or "sql" in t_lower)
+                         else "ALTA")
+    else:
+        severidad_ips = severidad
 
     puede_bloquear = False
     if es_critico:
@@ -761,6 +986,7 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
         mensaje = (
             f"SISTEMA DE INTRUSION:\n"
             f"ALERT [IDS] {tipo_final} detectado\n"
+            f"Severidad: {severidad_ips} ({'ML+HEUR' if (not es_ml_puro and 'ml' in origen_final) else ('ML' if es_ml_puro else 'HEUR')})\n"
             f"IP Origen: {ip_src}\n"
             f"IP Destino: {ip_dst}\n"
             f"Protocolo: {protocolo}\n"
@@ -777,7 +1003,9 @@ def guardar_ataque(ip_src, tipo_ataque, protocolo, puerto, ip_dst="DESCONOCIDA",
     if modo == 'bloqueo':
         print(f"ALERT [IPS] Criterios de bloqueo cumplidos para {ip_src} | Tipo: {tipo_ataque} | Severidad: {severidad_ips}")
 
-        duracion = 24 # 24 horas por defecto en MikroTik
+        # M4: la duración la fija la política (severidad -> tiempo); 24 h es
+        # el default v5. La unidad de MikroTik/log es HORAS.
+        duracion = int(duracion_horas)
         resultado_bloqueo = None
         comando = ''
         respuesta = ''
@@ -1384,6 +1612,76 @@ def detectar_sql_injection(packet):
     except Exception:
         pass
 
+
+def detectar_payload_v6(packet):
+    """M4 (nivel 2a): detector de payload TF-IDF+LogReg sobre la petición HTTP.
+
+    A diferencia de SQLiGuard (que adivinaba SQLi por features de flujo),
+    aquí la señal ESTÁ en el payload. La decisión completa pasa por la
+    política de bloqueo (matriz por fuente). El regex fuerte v5 queda como
+    señal barata de arbitraje (ya corre en detectar_sql_injection).
+    """
+    if payload_bundle is None:
+        return
+    if not (packet.haslayer(scapy.IP) and packet.haslayer(scapy.Raw)
+            and packet.haslayer(scapy.TCP)):
+        return
+
+    try:
+        ip_src = packet[scapy.IP].src
+        ip_dst = packet[scapy.IP].dst
+        if ip_src == MI_IP or ip_src in IPS_CONFIABLES or ip_en_rangos(ip_src):
+            return
+
+        puerto = packet[scapy.TCP].dport
+        if puerto not in PUERTOS_WEB:
+            return
+
+        carga = packet[scapy.Raw].load.decode(errors='ignore')
+        if not carga.isascii() or len(carga) > 4000:
+            return
+        if _RE_HTTP_PETICION.match(carga.lstrip()) is None:
+            return  # no es petición HTTP (retorno/basura)
+
+        preprocesada = unquote_plus(carga).lower()
+        proba = float(payload_bundle['modelo'].predict_proba(
+            payload_bundle['vectorizador'].transform([preprocesada]))[0][1])
+        umbral_payload = float(payload_bundle.get('umbral', 0.5))
+        if proba < umbral_payload:
+            return
+
+        # El payload del ML es la señal ML; el regex fuerte v5 es el árbitro.
+        firma_fuerte = _RE_SQLI_FUERTE.search(preprocesada) is not None
+        decision = politica_bloqueo.decidir('Inyeccion_SQL', senal_ml=True,
+                                            senal_heuristica=firma_fuerte)
+        decision_txt = {'bloquear': 'alerta', 'alertar': 'alerta',
+                        'grabar': 'descartado'}.get(decision['accion'],
+                                                    'descartado')
+        _registrar_candidato_v6(
+            ip_src, ip_dst, 'Inyeccion_SQL', proba, umbral_payload, True,
+            firma_fuerte, f'payload ML (regex fuerte={firma_fuerte})',
+            json.dumps({'muestra': _sanear_muestra_sqli(preprocesada, 200)}),
+            decision_txt)
+
+        metricas_trafico['v6_candidatos'] = metricas_trafico.get('v6_candidatos', 0) + 1
+        if decision_txt == 'descartado':
+            metricas_trafico['v6_descartados'] = metricas_trafico.get('v6_descartados', 0) + 1
+            return
+
+        if ML_SOMBRA:
+            return  # sombra: nada notifica; la evidencia vive en ml_candidatos
+
+        guardar_ataque(
+            ip_src, 'Inyeccion_SQL', 'TCP', puerto, ip_dst,
+            flag=f"payload-{decision['etiqueta']}", es_ml_puro=(not firma_fuerte),
+            confianza_ml=proba,
+            features_json=json.dumps({'muestra': _sanear_muestra_sqli(preprocesada, 200)}),
+            origen=decision['origen'], severidad=decision['severidad'],
+            duracion_horas=politica_bloqueo.duracion_horas(decision))
+        metricas_trafico['v6_alertas'] = metricas_trafico.get('v6_alertas', 0) + 1
+    except Exception as e:
+        print(f"[!] payload v6: {e}")
+
 def detectar_udp_flood(packet):
     if not packet.haslayer(scapy.IP) or not packet.haslayer(scapy.UDP):
         return
@@ -1496,6 +1794,9 @@ def procesar_paquete(packet):
             detectar_exploit(packet)
             detectar_sql_injection(packet)
             detectar_udp_flood(packet)
+            # M4 nivel 2a: detector de payload v6 (solo si IDS_ML_V6=1)
+            if ML_V6 and payload_bundle is not None:
+                detectar_payload_v6(packet)
     except Exception as e:
         print(f"[X] Excepcion en procesar_paquete: {e}")
 

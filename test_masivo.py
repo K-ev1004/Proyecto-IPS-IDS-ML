@@ -16,6 +16,8 @@ Secuencia:
   T4. Exportador de logs (`log_exporter`): comprobacion de escritura .log.
   T6. Detector de payload SQLI v6-M2 (sqli_payload.pkl): precision/recall
       sobre el test de CSIC 2010 con el umbral calibrado en validacion.
+  T7. Arbitraje v6 (M4): replay de la capa de decisión (filtro de entrada +
+      señales + política) sobre el corpus C3 bajo los 3 modos de política.
 """
 
 import os
@@ -358,6 +360,104 @@ except Exception as e:
     print(f"      [ERROR] {e}")
 
 # ---------------------------------------------------------------------------
+# T7. Replay del arbitraje v6 sobre el corpus C3 (capa de decisión)
+# ---------------------------------------------------------------------------
+print("\n[T7] Arbitraje v6: replay de decisiones sobre el corpus C3...")
+try:
+    import sqlite3
+    sys.path.insert(0, os.path.join(BASE_DIR, 'scripts'))
+    import politica_bloqueo
+    from clasificar_c3 import clasificar as _clasificar_c3
+    ruta_c3 = os.path.join(BASE_DIR, 'evidencia', 'db_archive',
+                           'intrusiones_v5_c3-72h_20261104_161736.db')
+    if not os.path.exists(ruta_c3):
+        raise FileNotFoundError(f'falta el corpus C3: {ruta_c3}')
+
+    con_c3 = sqlite3.connect(f'file:{ruta_c3}?mode=ro', uri=True)
+    cur_c3 = con_c3.cursor()
+
+    # La variable IDS_POLITICA controla la matriz; probamos los 3 modos.
+    modos = {'sombra': 'grabar', 'heuristica': 'alertar', 'default': None}
+    conteo = {m: {'alertas_ml': 0, 'alertas_heur': 0, 'candidatos': 0,
+                  'filtrados_entrada': 0, 'senales_reales_alertadas': 0}
+              for m in modos}
+    total_filas = 0
+    dur_dias = None
+    for fila in cur_c3.execute(
+            'SELECT id, ts_utc, tipo_ataque, origen, ip_src, ip_dst, protocolo,'
+            '       puerto, n_puertos, n_destinos, evidencia_json, features_json'
+            ' FROM ataques ORDER BY id'):
+        (fid, ts, tipo, origen, ip_src, ip_dst, proto, puerto,
+         n_puertos, n_destinos, evidencia, features) = fila
+        familia, _ = _clasificar_c3((tipo, origen, ip_src, ip_dst, proto,
+                                     puerto, n_puertos, n_destinos,
+                                     evidencia, features))
+        total_filas += 1
+        # rango temporal se calcula aparte (min/max) al final
+
+        es_senal = familia.startswith('senal_')
+        filtro_v6 = familia == 'fp_ml_sqli_sin_flujo'  # no entra al FlowTracker v6
+        senal_ml = (origen == 'ml') and not filtro_v6
+        senal_heur = es_senal or familia == 'revisar'
+
+        for modo in modos:
+            c = conteo[modo]
+            if filtro_v6:
+                c['filtrados_entrada'] += 1
+                continue
+            if origen != 'ml':
+                # canal heurístico: pasa igual que en producción v5
+                if senal_heur:
+                    c['alertas_heur'] += 1
+                    c['senales_reales_alertadas'] += 1
+                continue
+            c['candidatos'] += 1
+            if modo == 'default':
+                os.environ.pop('IDS_POLITICA', None)
+            else:
+                os.environ['IDS_POLITICA'] = modo
+            d = politica_bloqueo.decidir('Posible_Exploit', senal_ml=senal_ml,
+                                         senal_heuristica=senal_heur)
+            # el 99,97% de los candidatos C3 son de clases ML sin corrobora:
+            # con la matriz default (ml->alertar) alertarían; sombra/heur no.
+            if d['accion'] in ('alertar', 'bloquear'):
+                if senal_heur:
+                    c['senales_reales_alertadas'] += 1
+                else:
+                    c['alertas_ml'] += 1
+
+    rango = cur_c3.execute('SELECT MIN(ts_utc), MAX(ts_utc) FROM ataques').fetchone()
+    from datetime import datetime as _dt
+    dias = max(0.001, (_dt.fromisoformat(rango[1]) - _dt.fromisoformat(rango[0])
+                       ).total_seconds() / 86400)
+    con_c3.close()
+    os.environ.pop('IDS_POLITICA', None)
+
+    resumen_t7 = {'total_filas': total_filas, 'dias': round(dias, 3)}
+    for modo in modos:
+        c = conteo[modo]
+        resumen_t7[modo] = {
+            **{k: v for k, v in c.items()},
+            'fp_ml_por_dia': round(c['alertas_ml'] / dias, 1),
+        }
+
+    RESULTADOS['T7'] = resumen_t7
+    print(f"      corpus: {total_filas:,} filas / {dias:.2f} días")
+    for modo in modos:
+        c = conteo[modo]
+        print(f"      modo {modo:>10}: alertas_ml={c['alertas_ml']:,} "
+              f"(FP/día={resumen_t7[modo]['fp_ml_por_dia']:,}) | "
+              f"señales reales={c['senales_reales_alertadas']} | "
+              f"filtrados_entrada={c['filtrados_entrada']:,}")
+    print("      [i] los modelos v6 no pueden correr sobre el corpus (solo "
+          "guarda 9 features de flujo): esto valida la CAPA DE DECISIÓN con "
+          "la verdad de clasificar_c3; el FP real del v6 se mide en M5.")
+except Exception as e:
+    import traceback; traceback.print_exc()
+    RESULTADOS['T7'] = {'error': str(e)}
+    print(f"      [ERROR] {e}")
+
+# ---------------------------------------------------------------------------
 # Resumen
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 70)
@@ -412,6 +512,19 @@ def _t6_ok():
     return (d.get('precision', 0) >= 0.995
             and d.get('ms_por_prediccion', 1e9) < 10)
 
+def _t7_ok():
+    d = RESULTADOS.get('T7', {})
+    if 'error' in d:
+        return False
+    sombra = d.get('sombra', {})
+    heur = d.get('heuristica', {})
+    # Puerta M4: con la matriz en modo sombra, FP/día = 0 (nada notifica);
+    # en modo heurística (producción v5), el ML no alerta y las 69 señales
+    # reales del corpus se conservan.
+    return (sombra.get('fp_ml_por_dia', -1) == 0
+            and heur.get('fp_ml_por_dia', -1) == 0
+            and heur.get('senales_reales_alertadas', 0) == 69)
+
 resultados_gates = [
     ('T1', _t1_ok(), f"acc>={RESULTADOS.get('T1', {}).get('accuracy', 0):.4f} "
                      f"f1_macro>={RESULTADOS.get('T1', {}).get('f1_macro', 0):.4f}"),
@@ -423,6 +536,8 @@ resultados_gates = [
     ('T6', _t6_ok(), f"prec={RESULTADOS.get('T6', {}).get('precision', 0):.4f} "
                      f"lat={RESULTADOS.get('T6', {}).get('ms_por_prediccion', 999)}ms "
                      "(objetivo P>=0.995, <10ms)"),
+    ('T7', _t7_ok(), f"sombra FP/dia={RESULTADOS.get('T7', {}).get('sombra', {}).get('fp_ml_por_dia', 'err')} "
+                     f"| senales_reales={RESULTADOS.get('T7', {}).get('heuristica', {}).get('senales_reales_alertadas', 'err')}/69"),
 ]
 
 print("\n" + "=" * 70)

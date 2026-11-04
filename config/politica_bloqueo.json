@@ -1,0 +1,9 @@
+{
+  "_comentario": "Matriz de politica M4 (ML v6). Acciones: grabar | alertar | bloquear. duracion_min: minutos de bloqueo (0 = hasta apagado). Los defaults viven en politica_bloqueo.py (ml+heuristica: bloquear 24h; ml: alertar 1h; heuristica: alertar 24h). 'por_clase' permite el reingreso por clase (M6) segun la evidencia de cada fase: poblar con la precision medida en M5 (fase sombra), una clase a la vez. Estado inicial: SIN overrides por clase (modo sombra conservador: IDS_ML_SOMBRA=1 graba candidatos y nada del ML notifica/bloquea hasta pasar la puerta).",
+  "defaults": {
+    "ml+heuristica": {"accion": "bloquear", "duracion_min": 1440},
+    "ml": {"accion": "alertar", "duracion_min": 60},
+    "heuristica": {"accion": "alertar", "duracion_min": 1440}
+  },
+  "por_clase": {}
+}
