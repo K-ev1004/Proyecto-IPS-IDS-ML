@@ -8,12 +8,17 @@ Uso:
     venv\\Scripts\\python.exe scripts\\descargar_datasets_v6.py --listar
 
 Qué descarga y por qué (ver docs/ML_V6_DESARROLLO.md §3):
-  IDS2018  CSE-CIC-IDS2018 MachineLearningCSV (AWS S3 público)  → clases volumétricas
+  IDS2018  CSE-CIC-IDS2018 CICFlowMeter (AWS S3 público)  → clases volumétricas
            y de explotación del multiclase; ablation de fuga de Dst Port en M0/M3.
-  IDS2017  CIC-IDS2017 MachineLearningCSV (cicresearch.ca)      → ÚNICA fuente de
-           Port_Scanner + ataques web (Bruteforce/XSS/SQLi del viernes).
-  SQLi     Zenodo 6907252 D1_train.csv (Union SQLi)             → entrenamiento M2.
-  CSIC2010 espejos públicos de la ISI (opcional, M2)            → HTTP benigno.
+  IDS2017  CIC-IDS2017 MachineLearningCSV.zip (espejo oficial en Hugging Face)
+           → ÚNICA fuente de Port_Scanner + ataques web (viabilidad §5).
+           2026-11-04: UNB eliminó las descargas directas (cicresearch.ca y
+           205.174.165.80 devuelven una página HTML de 98.455 bytes en cualquier
+           ruta); el ZIP espejado tiene el tamaño EXACTO del oficial
+           (235.102.953 bytes, log wget 2020) y trae los 8 CSV oficiales
+           (Thursday-Afternoon-DDos no forma parte de MachineLearningCSV).
+  SQLi     Zenodo 6907252 "SLQ Injection Attack for training (D1).csv"
+           (nombre real del archivo; se guarda como D1_train.csv) → M2.
 
 Qué NO descarga (decisión documentada 2026-11-04):
   CIC-DDoS2019  → 30 GB; opcional según el plan ("hoy lo cubre la heurística").
@@ -21,6 +26,9 @@ Qué NO descarga (decisión documentada 2026-11-04):
                   (UDPLag 158 MB, Syn 637 MB, DrDoS_LDAP 917 MB).
   CIC-IDS2020   → No está en el plan ni en MAPEO_CLASES del generador; no aporta
                   clases nuevas (solapa con 2018/2019). Alcance de tesis innecesario.
+  CSIC2010      → Pendiente MANUAL: la fuente original (isi.csic.es) está caída
+                  y los espejos útiles (Kaggle) exigen cuenta. Opcional para M2;
+                  se retoma solo si el modelo de payload lo necesita.
 
 Reanudación: cada archivo baja a <destino>.part y se retoma con Range si se corta.
 Verificación: tamaño contra Content-Length y cabecera legible por pandas.
@@ -36,9 +44,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 URL_IDS2018 = ('https://cse-cic-ids2018.s3.ca-central-1.amazonaws.com/'
                'Processed%20Traffic%20Data%20for%20ML%20Algorithms/')
-URL_IDS2017 = ('http://cicresearch.ca/CICDataset/CIC-IDS-2017/Dataset/'
-               'MachineLearningCSV/MachineLearningCVE/')
-URL_ZENODO_D1 = 'https://zenodo.org/records/6907252/files/D1_train.csv?download=1'
+URL_IDS2017_ZIP = ('https://huggingface.co/datasets/bencorn/CICIDS2017/resolve/'
+                   'main/csvs/MachineLearningCSV.zip')
+URL_ZENODO_D1 = ('https://zenodo.org/api/records/6907252/files/'
+                 'SLQ%20Injection%20Attack%20for%20training%20(D1).csv/content')
 
 # El bucket S3 publica los CICFlowMeter por día (nombres largos); los guardamos
 # con la nomenclatura de MachineLearningCSV usada en docs/ml/viabilidad-datasets.md.
@@ -55,29 +64,13 @@ MAPEO_2018 = [
     ('Friday-02-03-2018_TrafficForML_CICFlowMeter.csv',    '03-02-2018.csv'),
 ]
 
-ARCHIVOS_2017 = [
-    'Monday-WorkingHours.pcap_ISCX.csv',
-    'Tuesday-WorkingHours.pcap_ISCX.csv',
-    'Wednesday-workingHours.pcap_ISCX.csv',
-    'Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv',
-    'Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv',
-    'Thursday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-    'Friday-WorkingHours-Morning.pcap_ISCX.csv',
-    'Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv',
-    'Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv',
-]
-
 # (dataset, nombre_local, url, dir_destino)
 MANIFIESTO = (
     [('IDS2018', local, URL_IDS2018 + remoto, 'datasets/CSE-CIC-IDS2018')
      for remoto, local in MAPEO_2018]
-    + [('IDS2017', f, URL_IDS2017 + f, 'datasets/CIC-IDS2017') for f in ARCHIVOS_2017]
+    # IDS2017: ZIP completo (8 CSV oficiales dentro); se extrae plano.
+    + [('IDS2017', 'MachineLearningCSV.zip', URL_IDS2017_ZIP, 'datasets/CIC-IDS2017')]
     + [('SQLi', 'D1_train.csv', URL_ZENODO_D1, 'datasets/SQLi_Zenodo')]
-    # CSIC 2010: la fuente original (isi.csic.es) suele estar caída; espejos
-    # requieren registro (Kaggle). Se intenta el espejo público más conocido;
-    # si falla queda documentado como pendiente manual.
-    + [('CSIC2010', 'normal_traffic_train.csv',
-        'http://www.isi.csic.es/dataset/normal_traffic_train.csv', 'datasets/CSIC2010')]
 )
 
 REPORTE = BASE_DIR / 'entrenar' / 'resultados' / 'descargas_v6.txt'
@@ -129,8 +122,37 @@ def verificar_csv(ruta: Path):
         import pandas as pd
         cab = pd.read_csv(ruta, nrows=2)
         return len(cab.columns)
-    except Exception as e:
+    except Exception:
         return -1
+
+
+def verificar_y_extraer_zip(ruta_zip: Path, destino: Path):
+    """Verifica el ZIP y extrae los CSV PLANOS (el generador lista la carpeta
+    sin recursion). Devuelve (ok, detalle)."""
+    import zipfile
+    try:
+        with zipfile.ZipFile(ruta_zip) as z:
+            malo = z.testzip()
+            if malo:
+                return False, f'miembro corrupto: {malo}'
+            csvs = [n for n in z.namelist()
+                    if n.lower().endswith('.csv') and not n.endswith('/')]
+            # El ZIP oficial trae 8 CSV (Thursday-Afternoon-DDos NO esta en
+            # MachineLearningCSV; el DDoS de 2017 entra por Friday-Afternoon-DDos).
+            if len(csvs) != 8:
+                return False, f'esperaba 8 CSV, hay {len(csvs)}: {csvs}'
+            destino.mkdir(parents=True, exist_ok=True)
+            for n in csvs:
+                (destino / Path(n).name).write_bytes(z.read(n))
+        # verificación final con pandas (los 9 deben abrir con ~80 columnas)
+        import pandas as pd
+        cols_min = min(len(pd.read_csv(destino / Path(n).name, nrows=1).columns)
+                       for n in csvs)
+        if cols_min < 70:  # 79 features + Label
+            return False, f'CSVs extraidos con pocas columnas: {cols_min}'
+        return True, f'{len(csvs)} CSV extraidos, min {cols_min} columnas'
+    except Exception as e:
+        return False, str(e)
 
 
 def main():
@@ -141,7 +163,7 @@ def main():
         pass
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--solo', choices=['IDS2018', 'IDS2017', 'SQLi', 'CSIC2010'],
+    ap.add_argument('--solo', choices=['IDS2018', 'IDS2017', 'SQLi'],
                     help='descarga solo un dataset')
     ap.add_argument('--listar', action='store_true', help='muestra el manifiesto y sale')
     args = ap.parse_args()
@@ -159,10 +181,19 @@ def main():
         destino = BASE_DIR / ddir / nombre
         print(f'[*] [{ds}] {nombre}')
         estado, tam = descargar(nombre, url, destino)
-        cols = verificar_csv(destino) if estado != 'fallo' and destino.exists() else -1
-        ok = estado != 'fallo' and cols > 1
-        print(f'    -> {estado} ({tam:,} bytes, {cols} columnas){" [OK]" if ok else " [REVISAR]"}')
-        resultados.append((ds, nombre, estado, tam, cols, ok))
+        if ds == 'IDS2017' and estado != 'fallo' and destino.exists():
+            # verificación de integridad + extracción plana de los 9 CSV
+            ok_zip, detalle = verificar_y_extraer_zip(destino, BASE_DIR / ddir)
+            print(f'    -> zip: {detalle} {"[OK]" if ok_zip else "[REVISAR]"}')
+            resultado = (ds, nombre, 'ok' if ok_zip else 'fallo',
+                         destino.stat().st_size, detalle, ok_zip)
+        else:
+            cols = verificar_csv(destino) if estado != 'fallo' and destino.exists() else -1
+            ok = estado != 'fallo' and cols > 1
+            print(f'    -> {estado} ({tam:,} bytes, {cols} columnas)'
+                  f'{" [OK]" if ok else " [REVISAR]"}')
+            resultado = (ds, nombre, estado, tam, cols, ok)
+        resultados.append(resultado)
 
     # Reporte versionable (sin datos personales: solo tamaños y estados)
     from datetime import datetime, timezone

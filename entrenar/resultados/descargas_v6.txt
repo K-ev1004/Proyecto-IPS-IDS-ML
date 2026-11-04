@@ -1,0 +1,40 @@
+
+## corrida 2026-11-04T18:00:26+00:00
+| IDS2018 | 02-14-2018.csv | ok | 358,223,333 | 80 | OK |
+| IDS2018 | 02-15-2018.csv | ok | 375,945,899 | 80 | OK |
+| IDS2018 | 02-16-2018.csv | ok | 333,723,605 | 80 | OK |
+| IDS2018 | 02-20-2018.csv | ok | 4,054,925,350 | 84 | OK |
+| IDS2018 | 02-21-2018.csv | ok | 328,893,673 | 80 | OK |
+| IDS2018 | 02-22-2018.csv | ok | 382,636,202 | 80 | OK |
+| IDS2018 | 02-23-2018.csv | ok | 382,840,456 | 80 | OK |
+| IDS2018 | 02-28-2018.csv | ok | 209,249,758 | 80 | OK |
+| IDS2018 | 03-01-2018.csv | ok | 107,842,858 | 80 | OK |
+| IDS2018 | 03-02-2018.csv | ok | 352,368,373 | 80 | OK |
+| IDS2017 | Monday-WorkingHours.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Tuesday-WorkingHours.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Wednesday-workingHours.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Thursday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Friday-WorkingHours-Morning.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| IDS2017 | Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv | ok | 98,455 | 1 | REVISAR |
+| SQLi | D1_train.csv | fallo | 0 | -1 | REVISAR |
+| CSIC2010 | normal_traffic_train.csv | fallo | 0 | -1 | REVISAR |
+
+## corrida 2026-11-04T18:04:17+00:00
+| IDS2018 | 02-14-2018.csv | ya_estaba | 358,223,333 | 80 | OK |
+| IDS2018 | 02-15-2018.csv | ya_estaba | 375,945,899 | 80 | OK |
+| IDS2018 | 02-16-2018.csv | ya_estaba | 333,723,605 | 80 | OK |
+| IDS2018 | 02-20-2018.csv | ya_estaba | 4,054,925,350 | 84 | OK |
+| IDS2018 | 02-21-2018.csv | ya_estaba | 328,893,673 | 80 | OK |
+| IDS2018 | 02-22-2018.csv | ya_estaba | 382,636,202 | 80 | OK |
+| IDS2018 | 02-23-2018.csv | ya_estaba | 382,840,456 | 80 | OK |
+| IDS2018 | 02-28-2018.csv | ya_estaba | 209,249,758 | 80 | OK |
+| IDS2018 | 03-01-2018.csv | ya_estaba | 107,842,858 | 80 | OK |
+| IDS2018 | 03-02-2018.csv | ya_estaba | 352,368,373 | 80 | OK |
+| IDS2017 | MachineLearningCSV.zip | fallo | 235,102,953 | esperaba 9 CSV, hay 8: ['MachineLearningCVE/Wednesday-workingHours.pcap_ISCX.csv', 'MachineLearningCVE/Tuesday-WorkingHours.pcap_ISCX.csv', 'MachineLearningCVE/Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv', 'MachineLearningCVE/Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv', 'MachineLearningCVE/Monday-WorkingHours.pcap_ISCX.csv', 'MachineLearningCVE/Friday-WorkingHours-Morning.pcap_ISCX.csv', 'MachineLearningCVE/Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv', 'MachineLearningCVE/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv'] | REVISAR |
+| SQLi | D1_train.csv | ok | 55,245,241 | 25 | OK |
+
+## corrida 2026-11-04T18:04:43+00:00
+| IDS2017 | MachineLearningCSV.zip | ok | 235,102,953 | 8 CSV extraidos, min 79 columnas | OK |

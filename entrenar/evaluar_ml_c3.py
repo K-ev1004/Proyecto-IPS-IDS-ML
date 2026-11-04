@@ -239,13 +239,15 @@ def estudio_fuga(muestra=400_000):
     feats = list(json.loads((BASE_DIR / 'Modelos_Entrenados' / 'selected_features_v5.pkl')
                             .read_bytes()))
     partes = []
-    por_archivo = max(1, muestra // len(csvs))
     for ruta in csvs:
+        # 1 de cada 7 filas para no cargar el archivo completo en memoria
         df = pd.read_csv(ruta, skiprows=lambda i: i > 0 and (i % 7), low_memory=False)
         partes.append(df)
         if sum(len(p) for p in partes) >= muestra:
             break
     df = pd.concat(partes, ignore_index=True)
+    if len(df) > muestra:  # acoto: LogReg sobre millones tardaria horas
+        df = df.sample(n=muestra, random_state=SEMILLA)
     df.columns = df.columns.str.strip()
     if 'Destination Port' in df.columns:
         df = df.rename(columns={'Destination Port': 'Dst Port'})
@@ -298,7 +300,34 @@ def estudio_fuga(muestra=400_000):
     return res
 
 
-def escribir_salidas(r, fuga):
+def escribir_fuga(fuga):
+    """Escribe el estudio de fuga en su propio archivo (no toca el informe
+    del replay: pueden correr por separado)."""
+    SALIDAS.mkdir(parents=True, exist_ok=True)
+    ahora = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    ruta_md = SALIDAS / 'M0_fuga_puertos.md'
+    with open(ruta_md, 'w', encoding='utf-8') as fh:
+        fh.write('# M0 — Fuga de características (Dst Port) en CSE-CIC-IDS2018\n\n')
+        fh.write(f'**Generado:** {ahora} · semilla {SEMILLA} · '
+                 f'LogReg (StandardScaler) holdout 80/20 estratificado\n\n')
+        fh.write('| Modelo | Accuracy | Macro-F1 | Features |\n|---|---:|---:|---:|\n')
+        for k in ('23_features', 'sin_puertos', 'solo_dst_port_arbol'):
+            d = fuga[k]
+            fh.write(f'| {k} | {d["accuracy"]} | {d["macro_f1"]} | {d["n_features"]} |\n')
+        fh.write('\nUn árbol que SOLO mira `Dst Port` clasificando casi igual que '
+                 'el modelo completo es la prueba directa de fuga: el puerto '
+                 'cuasi-etiqueta la clase en los CIC (defecto nº 3 del diagnóstico).\n\n')
+        fh.write('## Por clase (precision/recall en holdout)\n\n')
+        for variante, detalle in fuga.get('por_clase', {}).items():
+            fh.write(f'- **{variante}**: ' + ', '.join(
+                f'{c}: p={d["p"]}/r={d["r"]}' for c, d in detalle.items()) + '\n')
+        fh.write('\nUso en la tesis: la tensión accuracy-holdout vs generalización '
+                 'C3 (M3 entrena con y sin puertos y decide con replay) es el '
+                 'resultado interesante.\n')
+    print(f'[OK] {ruta_md}')
+
+
+def escribir_salidas(r):
     SALIDAS.mkdir(parents=True, exist_ok=True)
     ahora = datetime.now(timezone.utc).isoformat(timespec='seconds')
 
@@ -316,8 +345,7 @@ def escribir_salidas(r, fuga):
         fh.write(f'vectores cero: {r["vectores_cero"]["n"]:,} '
                  f'(alerta {r["vectores_cero"]["alerta"]:,})\n')
         fh.write(f'latencia: {sg["ms_por_prediccion"]} ms/prediccion\n')
-        if fuga:
-            fh.write(f'fuga: {json.dumps(fuga, ensure_ascii=False)}\n')
+        fh.write('fuga Dst Port: ver entrenar/resultados/M0_fuga_puertos.md\n')
     print(f'[OK] {ruta_txt}')
 
     ruta_md = SALIDAS / 'M0_linea_base.md'
@@ -361,18 +389,9 @@ def escribir_salidas(r, fuga):
         for hora, n in r['fp_top_horas']:
             fh.write(f'- {hora}:00 → {n:,} FP\n')
         fh.write('\n## 5. Fuga de características (Dst Port)\n\n')
-        if fuga:
-            fh.write('| Modelo | Accuracy | Macro-F1 | Features |\n|---|---:|---:|---:|\n')
-            for k in ('23_features', 'sin_puertos', 'solo_dst_port_arbol'):
-                d = fuga[k]
-                fh.write(f'| {k} | {d["accuracy"]} | {d["macro_f1"]} | {d["n_features"]} |\n')
-            fh.write('\nPor clase (p/r):\n\n')
-            for variante, detalle in fuga.get('por_clase', {}).items():
-                fh.write(f'- **{variante}**: ' + ', '.join(
-                    f'{c}: p={d["p"]}/r={d["r"]}' for c, d in detalle.items()) + '\n')
-        else:
-            fh.write('Pendiente: requiere CSE-CIC-IDS2018 descargado '
-                     '(`--fuga` cuando datasets/CSE-CIC-IDS2018/ esté completo).\n')
+        fh.write('Estudio aparte: `entrenar/resultados/M0_fuga_puertos.md` '
+                 '(se genera con `--fuga` cuando datasets/CSE-CIC-IDS2018/ '
+                 'está completo).\n')
     print(f'[OK] {ruta_md}')
 
 
