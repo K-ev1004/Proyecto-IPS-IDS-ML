@@ -72,7 +72,7 @@ def entrenar_catboost(df_train, features, target, iteraciones=400):
     modelo = CatBoostClassifier(
         iterations=iteraciones, learning_rate=0.1, depth=8,
         loss_function='MultiClass', class_weights=pesos,
-        random_seed=SEMILLA, thread_count=-1, verbose=0,
+        random_seed=SEMILLA, thread_count=-1, verbose=50,
         allow_writing_files=False)
     t0 = time.time()
     modelo.fit(df_train[features], y)
@@ -233,7 +233,7 @@ def modo_final(df, features, usar_puerto):
 
 def main():
     try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stdout.reconfigure(line_buffering=True, errors='replace')
     except (AttributeError, ValueError):
         pass
     ap = argparse.ArgumentParser(description=__doc__)

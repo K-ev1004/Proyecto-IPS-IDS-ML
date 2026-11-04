@@ -49,3 +49,4 @@ tzdata==2026.3
 urllib3==2.7.0
 pyarrow==26.0.1
 lightgbm==4.7.0
+staticmap==2.0.0
