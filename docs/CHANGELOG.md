@@ -31,8 +31,11 @@
        verificacion, reporte). Decision de descarga documentada en
        docs/ML_V6_DESARROLLO.md §3.2: 2018+2017+D1 necesarios, 2019 diferido
        (30 GB; subconjunto si M3 lo pide), 2020 no necesario.
-     - Pendiente de M0: estudio de fuga Dst Port (--fuga) cuando termine la
-       descarga de IDS2018.
+     - Pendiente de M0: NADA — el estudio de fuga Dst Port quedo hecho
+       (M0_fuga_puertos.md): un arbol con SOLO Dst Port alcanza 83,7 % de
+       accuracy en holdout IDS2018 (fuga directa), y quitar el puerto al
+       modelo completo cuesta solo 0,9 puntos (94,4 -> 93,5). M3 decide
+       con/sin puertos usando replay C3, no accuracy de holdout.
      - NO se toca produccion (main): todo el trabajo en rama ml-v6.
 
 TAREAS IDS/IPS - ESTADO

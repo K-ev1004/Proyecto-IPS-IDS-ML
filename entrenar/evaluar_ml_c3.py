@@ -236,8 +236,9 @@ def estudio_fuga(muestra=400_000):
     from sklearn.metrics import (accuracy_score, f1_score,
                                  precision_recall_fscore_support)
 
-    feats = list(json.loads((BASE_DIR / 'Modelos_Entrenados' / 'selected_features_v5.pkl')
-                            .read_bytes()))
+    import joblib
+    feats = list(joblib.load(BASE_DIR / 'Modelos_Entrenados'
+                             / 'selected_features_v5.pkl'))
     partes = []
     for ruta in csvs:
         # 1 de cada 7 filas para no cargar el archivo completo en memoria
@@ -321,9 +322,16 @@ def escribir_fuga(fuga):
         for variante, detalle in fuga.get('por_clase', {}).items():
             fh.write(f'- **{variante}**: ' + ', '.join(
                 f'{c}: p={d["p"]}/r={d["r"]}' for c, d in detalle.items()) + '\n')
-        fh.write('\nUso en la tesis: la tensión accuracy-holdout vs generalización '
-                 'C3 (M3 entrena con y sin puertos y decide con replay) es el '
-                 'resultado interesante.\n')
+        fh.write('\n**Lectura (defecto nº 3 confirmado):**\n\n')
+        fh.write('1. **Fuga directa**: un árbol que SOLO mira `Dst Port` alcanza '
+                 f'**{fuga["solo_dst_port_arbol"]["accuracy"]*100:.1f} % de accuracy** '
+                 'con una sola feature: el puerto cuasi-etiqueta la clase.\n')
+        costo = fuga['23_features']['accuracy'] - fuga['sin_puertos']['accuracy']
+        fh.write(f'2. **Costo de quitarla es bajo**: el modelo completo pierde solo '
+                 f'{costo*100:.1f} puntos de accuracy al eliminar `Dst Port`.\n')
+        fh.write('3. En M3 se entrenan las dos variantes y se decide con replay C3, '
+                 'no con accuracy del holdout (la tensión holdout-sintético vs '
+                 'generalización-real es el resultado de la tesis).\n\n')
     print(f'[OK] {ruta_md}')
 
 
@@ -412,24 +420,27 @@ def main():
     if args.fuga:
         fuga = estudio_fuga()
         if fuga:
-            escribir_salidas({'corpus': {'filas': 0, 'horas': 0},
-                              'canal_ml_vivo_c3': {}, 'sqli_guard_replay': {},
-                              'vectores_cero': {}, 'fp_top_horas': [],
-                              'familias_detalle': {}}, fuga)
+            escribir_fuga(fuga)
+            print('\n===== RESUMEN FUGA =====')
+            for k in ('23_features', 'sin_puertos', 'solo_dst_port_arbol'):
+                d = fuga[k]
+                print(f'{k}: acc={d["accuracy"]} macro-F1={d["macro_f1"]} '
+                      f'({d["n_features"]} features)')
         return
 
     print('[*] M0: replay del corpus C3 contra SQLiGuard v5...')
     filas, verdad, probs, pred_alerta, umbral, ms = replay()
     r = metricas(filas, verdad, probs, pred_alerta, umbral, ms)
 
-    fuga = None
     if not args.sin_fuga:
         print('[*] Estudio de fuga (Dst Port)...')
         try:
             fuga = estudio_fuga()
+            if fuga:
+                escribir_fuga(fuga)
         except Exception as e:
             print(f'[!] Fuga no completada: {e}')
-    escribir_salidas(r, fuga)
+    escribir_salidas(r)
 
     print('\n===== RESUMEN M0 =====')
     print(f'FP/día canal ML v5: {r["canal_ml_vivo_c3"]["fp_ml_por_dia"]:,}')
