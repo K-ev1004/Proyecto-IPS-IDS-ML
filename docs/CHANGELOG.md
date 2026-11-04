@@ -5,6 +5,33 @@
 
 ## Última entrada
 
+[30] M2 DECISION DE FUENTE DE PAYLOAD: SOLO CSIC 2010, GRABBER DESCARTADO
+     - Motivo: medir antes de construir (regla del laboratorio). El trafico
+       UNIPAZ resulto 99,998 % no-HTTP-plano (C3: 5 de 276.007 filas con
+       puerto web; prueba en vivo del grabber: 0 peticiones en 30 s de
+       SPAN). Alcanzar 500K peticiones HTTP reales tomaria semanas: el
+       grabber no aporta y se descarta.
+     - Tarea programada Grabber-HTTP-v6 detenida y desinstalada; BD de
+       captura (0 filas) eliminada. El codigo queda versionado con sus 8
+       tests (persistencia incremental, reanudacion, auto-arranque) por si
+       UNIPAZ suma servicios HTTP planos: activarlo es solo re-crear la
+       tarea (comando en ML_V6_DESARROLLO.md §3.1).
+     - Fuente unica de payload para M2: CSIC 2010, dos copias complementarias
+       verificadas fila a fila: csic_database.csv de Kaggle (61.066 filas,
+       columnas parseadas, aportacion manual del usuario) y b1nch3f/csic-
+       dataset de HF (96.668 peticiones crudas con split train/validation/
+       test: 72.000 Normal / 24.668 Anomalous). El texto crudo es lo que
+       come el TF-IDF char 1-3 grams.
+     - Salvedad detectada por verificacion de contenido: el espejo HF
+       ittailup/csic NO es CSIC 2010 (es prosa literaria en espanol); se
+       descargo, se inspecciono y se descarto. En el manifiesto queda la
+       URL correcta.
+     - Limitacion documentada para la tesis: benigno de payload
+       representativo (CSIC), no nativo UNIPAZ. Mitigaciones del plan: M4
+       arbitraje, M5 fase sombra contra trafico real, SQLiGuard v5 como
+       corroborador.
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [29] M1 FEATURES DIRECCIONALES: FLOWTRACKER V6 + DATASET V6 (PUERTA M1 CUMPLIDA)
      - Motivo: el defecto nº 1 del diagnostico C3 (flujo sin direccion: el
        primer paquete visto se asume atacante) se corrige en la raiz, en el

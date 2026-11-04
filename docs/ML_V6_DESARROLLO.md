@@ -100,17 +100,26 @@ de tamaño + reporte en `entrenar/resultados/descargas_v6.txt`).
 Es la pieza que faltó siempre: sin benignos reales, cualquier modelo aprende a
 marcar todo. Plan de captura:
 
-> **Ajuste 2026-11-04 (medido, riesgo R6 confirmado):** el tráfico UNIPAZ es
+> **Decisión 2026-11-04 (medido, riesgo R6 confirmado):** el tráfico UNIPAZ es
 > 99,998 % no-HTTP-plano (C3: 5 de 276.007 filas con puerto web; prueba en
-> vivo del grabber: 0 peticiones en 30 s de SPAN). La fuente **primaria** del
-> corpus benigno/ataque de payload pasa a ser **CSIC 2010**, en dos copias
-> complementarias verificadas: `csic_database.csv` de Kaggle (61.066 filas,
-> columnas parseadas, aportada manualmente) y el espejo HF
+> vivo: 0 peticiones en 30 s de SPAN). Capturar 500K peticiones HTTP reales
+> tomaría semanas: **el grabber NO se activa** y M2 usa **solo CSIC 2010**,
+> en dos copias complementarias verificadas: `csic_database.csv` de Kaggle
+> (61.066 filas, columnas parseadas, aportada manualmente) y el espejo HF
 > `b1nch3f/csic-dataset` (96.668 filas con la petición HTTP cruda —el texto
 > que come el TF-IDF— y split train/validation/test ya hecho: 72.000
-> Normal / 24.668 Anomalous). El grabber UNIPAZ queda corriendo como
-> **complemento best-effort**: lo que capture en la ventana de sombra se suma
-> al corpus real; no se bloquea M2 por su volumen.
+> Normal / 24.668 Anomalous).
+>
+> **Limitación documentada para la tesis:** el benigno del modelo de payload
+> es representativo (CSIC), no nativo UNIPAZ. Mitigaciones ya previstas en el
+> plan: (1) el arbitraje M4 exige confirmación independiente, (2) la puerta
+> de M5 evalúa contra tráfico REAL de UNIPAZ vía `ml_candidatos` + replay C3,
+> y (3) SQLiGuard v5 queda como corroborador durante la fase sombra.
+>
+> El código del grabber (`scripts/grabber_http_benigno.py` + `.bat`, con sus
+> 8 tests) **se conserva versionado** por si UNIPAZ suma servicios HTTP
+> planos: persistencia incremental, reanudación y auto-arranque ya probados;
+> activarlo sería solo re-crear la tarea programada.
 
 **Grabber a prueba de apagones** (`scripts/grabber_http_benigno.py`):
 1. Persistencia incremental: SQLite WAL, flush cada 20 paquetes / 5 s — un
@@ -335,7 +344,7 @@ conservada, sin alerta). Si la hay → alerta con `origen='ml+heuristica'`.
 - [ ] (Opcional) CSIC 2010 → `datasets/CSIC2010/`; CIC-DDoS2019 (diferido: 30 GB; subconjunto si M3 lo pide)
 - [x] M0: `entrenar/evaluar_ml_c3.py` → informe línea base (FP/día "antes": 92.004,5) + fuga documentada (`M0_fuga_puertos.md`)
 - [x] M1: features direccionales en `flujos_red.py` + dataset v6 (`dataset_global_unipaz_v6.csv`, 2,72 M filas × 33 features)
-- [x] Grabber de HTTP benigno UNIPAZ montado y a prueba de apagones (persistencia incremental + reanudación + tarea al iniciar sesión). Rol best-effort tras medir R6: la fuente primaria de payload es CSIC 2010
+- [x] Grabber de HTTP benigno UNIPAZ: descartado tras medir R6 (UNIPAZ es 99,998 % no-HTTP-plano → inútil para M2). Código versionado con tests; tarea NO registrada. M2 usa solo CSIC 2010
 - [ ] M2 → M3 → M4 → M5 → M6 según puertas de §6
 
 ## 10. Definition of Done (v6 lista)
