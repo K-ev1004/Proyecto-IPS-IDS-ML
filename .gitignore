@@ -129,6 +129,12 @@ Modelos_Entrenados/*
 # Detector de payload v6-M2 (TF-IDF+LightGBM, 7,4 MB): mismo criterio que
 # sqli_guard — artefacto clave reproducible, lo carga ids.py en M4.
 !Modelos_Entrenados/sqli_payload.pkl
+# CatBoost v6 (M3) y sus umbrales por clase: artefactos del reentrenamiento
+# con features v6 (los pkl pesan 15,8 MB en total, bajo el limite de LFS).
+!Modelos_Entrenados/pipeline_catboost_v6.pkl
+!Modelos_Entrenados/features_v6.pkl
+!Modelos_Entrenados/label_encoder_v6.pkl
+!Modelos_Entrenados/umbrales_v6.pkl
 
 # Carpetas de respaldo y reportes pesados
 Backup_v1/

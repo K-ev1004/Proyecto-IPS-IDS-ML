@@ -1,0 +1,13 @@
+MÉTRICAS CATBOOST V6 (M3) — semilla 42
+============================================================
+Dataset: dataset_global_unipaz_v6.csv (3,720,533 filas x 33 features)
+Puerto destino incluido: SI
+Holdout: 85/15 estratificado por muestreo aleatorio +
+ablation por fuente en M3_ablacion_puertos.json
+
+Accuracy (umbrales por clase): 0.9441
+Macro-F1: 0.8713
+Clases: ['Normal', 'DDoS_Distribuido', 'Posible_Exploit', 'SYN_Flood', 'Port_Scanner', 'Inyeccion_SQL', 'UDP_Flood']
+Umbrales por clase: {"Normal": 0.885, "DDoS_Distribuido": 0.085, "Posible_Exploit": 0.975, "SYN_Flood": 0.755, "Port_Scanner": 0.5, "Inyeccion_SQL": 0.5, "UDP_Flood": 0.5}
+
+Referencia v5 (metricas_v5.txt) para comparacion directa.

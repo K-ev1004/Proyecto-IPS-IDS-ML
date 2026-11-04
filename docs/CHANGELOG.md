@@ -5,6 +5,27 @@
 
 ## Última entrada
 
+[32] M3 CATBOOST V6: MODELO FINAL ENTRENADO, UMBRALES POR CLASE (PUERTA M3 CUMPLIDA)
+     - CatBoost v6: 1000 iteraciones (learn 1,53 -> 0,103) sobre
+       dataset_global_unipaz_v6.csv (3.720.533 filas x 33 features), con
+       class_weights recalculados y SIN SMOTE (descartado por escala y
+       riesgo de calibracion; el punto de operacion lo fija el umbral por
+       clase).
+     - Holdout 85/15: accuracy 0,9441, macro-F1 0,8713. La vara real sigue
+       siendo replay C3/fase sombra (M4/M5): el holdout aleatorio y el
+       cruzado por fuente (ablacion) delimitan el rango de honestidad.
+     - Umbrales por clase (curvas PR, precision objetivo 0,995):
+       Normal 0,885, DDoS_Distribuido 0,085, Posible_Exploit 0,975,
+       SYN_Flood 0,755, Port_Scanner 0,5, Inyeccion_SQL 0,5, UDP_Flood 0,5.
+     - Artefactos versionados (15,8 MB): pipeline_catboost_v6.pkl,
+       features_v6.pkl, label_encoder_v6.pkl, umbrales_v6.pkl +
+       entrenar/resultados/metricas_v6.txt (formato comparable a v5).
+     - Nota de operacion: la primera corrida del modo final murio sin
+       rastro (exit 1, salida vacia, 53 GB libres — descartada memoria);
+       el reintento con stdout line-buffered y CatBoost verbose=50 completo
+       normal. Si reincide, checkpointing por partes.
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [31] M2 DETECTOR DE PAYLOAD SQLI: ENTRENADO, PUERTA CUMPLIDA (P 0,9977)
      - Motivo: SQLiGuard v5 adivina SQLi por features de flujo (91.924 FP/dia
        medidos en M0); el payload SI contiene la senal. Nivel 2a de la
