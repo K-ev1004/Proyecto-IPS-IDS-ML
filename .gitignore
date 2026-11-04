@@ -93,6 +93,10 @@ datasets/*
 datasets/SQLi_Zenodo/*
 !datasets/SQLi_Zenodo/D2_test.csv
 
+# Curva PR del detector de payload v6-M2 (agregado umbral/precision/recall,
+# sin datos personales). Evidencia de la calibracion del umbral.
+!entrenar/resultados/curva_pr_sqli_payload.csv
+
 # Linea base de trafico previo a la prueba (150 muestras, sin IPs).
 !Captura_Linea_Base/captura_volumen_0911.csv
 
@@ -122,6 +126,9 @@ Modelos_Entrenados/*
 !Modelos_Entrenados/sql_guard_features.pkl
 !Modelos_Entrenados/metricas_v5.txt
 !Modelos_Entrenados/metricas_sqli_guard.txt
+# Detector de payload v6-M2 (TF-IDF+LightGBM, 7,4 MB): mismo criterio que
+# sqli_guard — artefacto clave reproducible, lo carga ids.py en M4.
+!Modelos_Entrenados/sqli_payload.pkl
 
 # Carpetas de respaldo y reportes pesados
 Backup_v1/

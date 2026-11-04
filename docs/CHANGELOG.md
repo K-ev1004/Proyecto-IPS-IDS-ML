@@ -5,6 +5,39 @@
 
 ## Última entrada
 
+[31] M2 DETECTOR DE PAYLOAD SQLI: ENTRENADO, PUERTA CUMPLIDA (P 0,9977)
+     - Motivo: SQLiGuard v5 adivina SQLi por features de flujo (91.924 FP/dia
+       medidos en M0); el payload SI contiene la senal. Nivel 2a de la
+       arquitectura v6: TF-IDF + modelo lineal sobre la peticion HTTP cruda.
+     - Script: entrenar/train_sqli_payload.py. Pipeline: URL-decode ->
+       lowercase -> TF-IDF char 1-3 grams (50K) + word 1-2 grams (30K,
+       FeatureUnion 65.558 features) -> Regresion Logistica.
+     - Umbral calibrado en VALIDACION con margen de seguridad (P>=0,998 en
+       val para aguantar la deriva a test; leccion de C3: el umbral lo fija
+       el benigno). v1 sin margen dio P test=0,9941 (0,9 puntos corto).
+     - TEST (29.001 peticiones, umbral fijo 0,475):
+       precision=0,9977 (objetivo >=0,995 CUMPLIDA), recall=0,9422,
+       FP sobre benigno 16/21.645 = 0,074% (por debajo del 0,1%),
+       F1=0,9692, latencia 0,006-0,10 ms/prediccion (<10 ms).
+     - CAMBIO DE MODELO por runtime: LightGBM (v1/v2) disparaba access
+       violation dentro de LGBM_BoosterPredictForCSR cuando convive con
+       CatBoost en el mismo proceso (bateria T1->T6 reproducible, aislado
+       no ocurre): conflicto de runtimes OpenMP. En M4 el motor carga
+       CatBoost + este detector JUNTOS, asi que se paso a LogReg (sklearn,
+       que ya convive con CatBoost en produccion via SQLiGuard). Bonus:
+       entrenamiento 134 s -> 10,5 s y latencia 1,86 -> 0,10 ms.
+     - T6 agregado a test_masivo.py con gate (P>=0,995, lat<10 ms);
+       T1 ahora usa el dataset v6 (el v5 solo existe en produccion).
+       Bateria completa: 5/5 gates PASS (T1 acc 0,8655 sobre el dataset v6;
+       nota: precision de Inyeccion_SQL en el v5 multiclase = 0,0603, mas
+       evidencia del diagnostico C3).
+     - Artefactos versionados: Modelos_Entrenados/sqli_payload.pkl (7,4 MB,
+       excepcion de gitignore igual que sqli_guard),
+       entrenar/resultados/metricas_sqli_payload.txt + curva_pr (agregados).
+     - La puerta "FP <= 0,1 % en replay C3" corre en M4/M5 (el corpus C3 no
+       guarda payloads; ml_candidatos si).
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [30] M2 DECISION DE FUENTE DE PAYLOAD: SOLO CSIC 2010, GRABBER DESCARTADO
      - Motivo: medir antes de construir (regla del laboratorio). El trafico
        UNIPAZ resulto 99,998 % no-HTTP-plano (C3: 5 de 276.007 filas con

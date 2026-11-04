@@ -14,6 +14,8 @@ Secuencia:
       trazabilidad) sobre un lote amplio, usando una BD TEMPORAL (no toca la
       BD de produccion) y desactivando alertas/Telegram.
   T4. Exportador de logs (`log_exporter`): comprobacion de escritura .log.
+  T6. Detector de payload SQLI v6-M2 (sqli_payload.pkl): precision/recall
+      sobre el test de CSIC 2010 con el umbral calibrado en validacion.
 """
 
 import os
@@ -34,6 +36,12 @@ sys.path.insert(0, BASE_DIR)
 # logs_ciberseguridad/. Debe definirse ANTES de importar ids (importa
 # log_exporter en su cabecera).
 os.environ['LOG_FOLDER'] = tempfile.mkdtemp(prefix='ids_logs_test_')
+
+# P1: la batería carga CatBoost v5 (T1) y LightGBM (T6) en el MISMO proceso;
+# con n_jobs=-1 LightGBM llegó a disparar un access violation dentro de
+# LGBM_BoosterPredictForCSR al correr la batería completa (solo no ocurre
+# aislado). Capar hilos OMP antes de que cargue la librería lo elimina.
+os.environ.setdefault('OMP_NUM_THREADS', '4')
 
 print("=" * 70)
 print(" TEST MASIVO — SUBSISTEMA ML IDS/IPS (UNIPAZ)")
@@ -74,11 +82,15 @@ def netflow_a_cic_fecha(row):
 # ---------------------------------------------------------------------------
 # T1. Modelo v5 sobre muestra grande del dataset global
 # ---------------------------------------------------------------------------
-print("\n[T1] Modelo v5 (multiclase) sobre muestra grande del dataset v5...")
+print("\n[T1] Modelo v5 (multiclase) sobre muestra grande del dataset global...")
 import ids
 try:
-    dfv5 = pd.read_csv(os.path.join(BASE_DIR, "Dataset_Limpio", "dataset_global_unipaz_v5.csv"),
-                       nrows=150000)
+    # Laboratorio ml-v6: solo existe el dataset v6 (33 features, las 23 del
+    # modelo v5 incluidas con los mismos nombres). El v5 sigue en produccion.
+    ruta_v5_csv = os.path.join(BASE_DIR, "Dataset_Limpio", "dataset_global_unipaz_v5.csv")
+    ruta_v6_csv = os.path.join(BASE_DIR, "Dataset_Limpio", "dataset_global_unipaz_v6.csv")
+    ruta_datos_t1 = ruta_v5_csv if os.path.exists(ruta_v5_csv) else ruta_v6_csv
+    dfv5 = pd.read_csv(ruta_datos_t1, nrows=150000)
     X = dfv5[ids.features_seleccionadas].fillna(0)
     y_true = ids.tipo_ataque_encoder.transform(dfv5['Label_UNIPAZ'])
     t0 = time.time()
@@ -293,6 +305,59 @@ except Exception as e:
     print(f"      [ERROR] {e}")
 
 # ---------------------------------------------------------------------------
+# T6. Detector de payload SQLI v6-M2 (TF-IDF + LightGBM) sobre CSIC test
+# ---------------------------------------------------------------------------
+print("\n[T6] Detector de payload SQLI (sqli_payload.pkl) sobre CSIC test...")
+try:
+    import joblib
+    from urllib.parse import unquote as _unquote
+    ruta_pkl = os.path.join(BASE_DIR, 'Modelos_Entrenados', 'sqli_payload.pkl')
+    ruta_test = os.path.join(BASE_DIR, 'datasets', 'CSIC2010',
+                             'b1_test-00000-of-00001.parquet')
+    if not os.path.exists(ruta_pkl) or not os.path.exists(ruta_test):
+        raise FileNotFoundError(
+            f'faltan {ruta_pkl} o {ruta_test} (entrenar/train_sqli_payload.py)')
+
+    bundle = joblib.load(ruta_pkl)
+    vec, modelo_p, umbral_p = bundle['vectorizador'], bundle['modelo'], bundle['umbral']
+    df_t6 = pd.read_parquet(ruta_test)
+    X = vec.transform(df_t6['request'].map(lambda t: _unquote(str(t)).lower()))
+    y = (df_t6['label'] == 'Anomalous').astype(int).values
+
+    t0 = time.perf_counter()
+    # Predicción por chunks (patrón de producción M4: el motor evalúa
+    # peticiones sueltas o lotes pequeños; y así la batería no depende de
+    # la RAM libre tras cargar el CatBoost v5 en T1).
+    probs_chunks = []
+    for i in range(0, X.shape[0], 5000):
+        probs_chunks.append(modelo_p.predict_proba(X[i:i + 5000])[:, 1])
+    proba = np.concatenate(probs_chunks)
+    dt = time.perf_counter() - t0
+    pred = proba >= umbral_p
+
+    from sklearn.metrics import confusion_matrix as _cm, f1_score as _f1
+    tn6, fp6, fn6, tp6 = _cm(y, pred, labels=[0, 1]).ravel()
+    RESULTADOS['T6'] = {
+        'umbral': umbral_p,
+        'precision': round(tp6 / max(1, tp6 + fp6), 4),
+        'recall': round(tp6 / max(1, tp6 + fn6), 4),
+        'f1': round(float(_f1(y, pred)), 4),
+        'fp': int(fp6), 'tn': int(tn6), 'tp': int(tp6), 'fn': int(fn6),
+        'tasa_fp_benigno': round(fp6 / max(1, fp6 + tn6), 5),
+        'ms_por_prediccion': round(dt / len(y) * 1000, 3),
+    }
+    print(f"      umbral={umbral_p:.2f} (calibrado en validacion, leccion C3)")
+    print(f"      precision={RESULTADOS['T6']['precision']} "
+          f"recall={RESULTADOS['T6']['recall']} f1={RESULTADOS['T6']['f1']}")
+    print(f"      FP benigno: {fp6}/{fp6+tn6} "
+          f"({RESULTADOS['T6']['tasa_fp_benigno']:.3%})")
+    print(f"      latencia: {RESULTADOS['T6']['ms_por_prediccion']} ms/prediccion")
+except Exception as e:
+    import traceback; traceback.print_exc()
+    RESULTADOS['T6'] = {'error': str(e)}
+    print(f"      [ERROR] {e}")
+
+# ---------------------------------------------------------------------------
 # Resumen
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 70)
@@ -339,6 +404,14 @@ def _t4_ok():
     d = RESULTADOS.get('T4', {})
     return bool(d.get('linea_bloqueo_escrita', False))
 
+def _t6_ok():
+    d = RESULTADOS.get('T6', {})
+    if 'error' in d:
+        return False
+    # Puerta M2: precisión >= 99,5 % en holdout benigno + latencia < 10 ms
+    return (d.get('precision', 0) >= 0.995
+            and d.get('ms_por_prediccion', 1e9) < 10)
+
 resultados_gates = [
     ('T1', _t1_ok(), f"acc>={RESULTADOS.get('T1', {}).get('accuracy', 0):.4f} "
                      f"f1_macro>={RESULTADOS.get('T1', {}).get('f1_macro', 0):.4f}"),
@@ -347,6 +420,9 @@ resultados_gates = [
     ('T3', _t3_ok(), f"sql_persistidos>={RESULTADOS.get('T3', {}).get('sql_persistidos', 0)} "
                      f"prec_cadena>={RESULTADOS.get('T3', {}).get('precision_cadena', 0):.4f}"),
     ('T4', _t4_ok(), f"linea_bloqueo_escrita={RESULTADOS.get('T4', {}).get('linea_bloqueo_escrita', False)}"),
+    ('T6', _t6_ok(), f"prec={RESULTADOS.get('T6', {}).get('precision', 0):.4f} "
+                     f"lat={RESULTADOS.get('T6', {}).get('ms_por_prediccion', 999)}ms "
+                     "(objetivo P>=0.995, <10ms)"),
 ]
 
 print("\n" + "=" * 70)
