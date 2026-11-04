@@ -314,12 +314,12 @@ conservada, sin alerta). Si la hay → alerta con `origen='ml+heuristica'`.
 
 ## 9. Checklist de arranque (orden de ejecución)
 
-- [ ] Descargar IDS2018 MachineLearningCSV → `datasets/CSE-CIC-IDS2018/`
-- [ ] Descargar IDS2017 MachineLearningCSV → `datasets/CIC-IDS2017/`
-- [ ] Descargar D1_train.csv (Zenodo 6907252) → `datasets/SQLi_Zenodo/`
-- [ ] (Opcional) CSIC 2010 → `datasets/CSIC2010/`; CIC-DDoS2019
-- [ ] M0: `entrenar/evaluar_ml_c3.py` → informe línea base (FP/día "antes")
-- [ ] M1: features direccionales en `flujos_red.py` + dataset v6
+- [x] Descargar IDS2018 MachineLearningCSV → `datasets/CSE-CIC-IDS2018/` (2026-11-04, vía S3 CICFlowMeter, 10/10 archivos)
+- [x] Descargar IDS2017 MachineLearningCSV → `datasets/CIC-IDS2017/` (2026-11-04, espejo del ZIP oficial en HF, 8 CSV)
+- [x] Descargar D1_train.csv (Zenodo 6907252) → `datasets/SQLi_Zenodo/` (2026-11-04, nombre real "SLQ Injection Attack for training (D1).csv")
+- [ ] (Opcional) CSIC 2010 → `datasets/CSIC2010/`; CIC-DDoS2019 (diferido: 30 GB; subconjunto si M3 lo pide)
+- [x] M0: `entrenar/evaluar_ml_c3.py` → informe línea base (FP/día "antes": 92.004,5) + fuga documentada (`M0_fuga_puertos.md`)
+- [x] M1: features direccionales en `flujos_red.py` + dataset v6 (`dataset_global_unipaz_v6.csv`, 2,72 M filas × 33 features)
 - [ ] Grabber de HTTP benigno UNIPAZ corriendo en el laboratorio (3-7 días)
 - [ ] M2 → M3 → M4 → M5 → M6 según puertas de §6
 

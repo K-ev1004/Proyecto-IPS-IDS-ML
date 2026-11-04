@@ -5,6 +5,42 @@
 
 ## Última entrada
 
+[29] M1 FEATURES DIRECCIONALES: FLOWTRACKER V6 + DATASET V6 (PUERTA M1 CUMPLIDA)
+     - Motivo: el defecto nº 1 del diagnostico C3 (flujo sin direccion: el
+       primer paquete visto se asume atacante) se corrige en la raiz, en el
+       extractor de flujos.
+     - flujos_red.py -> v6: dir_init (1=inicio con SYN puro, 0=respondio,
+       -1=desconocida; si el primer paquete no es SYN NO se inventa),
+       init_win_bytes (window del SYN), dst_port_svc / src_port_svc (servicio
+       vs efimero, misma lista de clasificar_c3.py), unipaz_src / unipaz_dst
+       (segmentos 172.10/20/30, replica de ids._es_ip_interna porque
+       flujos_red no puede importar ids), fwd_bwd_ratio, bytes_per_pkt,
+       flow_iat_mean / flow_iat_std, pkt_dir_changes.
+     - Compatibilidad v5: las 24 features quedan intactas y con sus nombres;
+       CatBoost v5 y SQLiGuard siguen cargando leyendo solo sus
+       features_seleccionadas. ids.py solo anade pasar la window TCP.
+     - Tests: tests/test_flujos_v6.py (8 casos: SYN puro, SYN-ACK primero,
+       retorno de servicio, IAT/ping-pong, flujo de 1 paquete, compat v5,
+       callback completo, JSON serializable). Suite completa: 42/42.
+     - generador_dataset_global.py -> v6: dataset pasa de 23 a 33 features
+       (Flow IAT Mean/Std, Active/Idle Mean/Std de CIC + init_win_bytes
+       unificado 2017/2018 + 3 derivadas con paridad verificada en vivo:
+       dst_port_svc, fwd_bwd_ratio, bytes_per_pkt). Corregido en v2 del
+       generador: coaccionar a numerico ANTES de derivar (las cabeceras
+       repetidas de los CSV dejaban la columna object y tumbaban 3 archivos:
+       02-16/02-28/03-01; recuperadas 1.242.745 filas de
+       SlowHTTPTest/Hulk/Infiltration/benignos).
+     - dataset_global_unipaz_v6.csv generado: 2.720.533 filas x 33 features.
+       Distribucion: Normal 1.500.000, DDoS_Distribuido 1.000.000,
+       Posible_Exploit 556.765, SYN_Flood 500.000, Port_Scanner 158.930,
+       Inyeccion_SQL 3.108, UDP_Flood 1.730 (este ultimo sigue corto: entra
+       mas con CIC-DDoS2019 si M3 lo pide).
+     - Sello del dataset: entrenar/resultados/dataset_v6_sha256.txt
+       (42db313c925c5d55ac3f16565f08693580ca48adde9640cfdac0377105df0306).
+     - dir_init real y unipaz_src/dst NO van en el dataset (no existen en
+       CIC): llegan del trafico real en la fase sombra M5, como dice la guia.
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [28] M0 LINEA BASE: REPLAY SQLIGUARD V5 CONTRA EL CORPUS C3 (PUERTA M0 CUMPLIDA)
      - Motivo: el plan ML v6 (docs/PLAN_ML_V6.md) exige antes de tocar codigo
        un numero formal del "antes": FP/dia del modelo v5 sobre el corpus C3
