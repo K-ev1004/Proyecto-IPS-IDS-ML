@@ -34,15 +34,27 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-URL_IDS2018 = 'https://cse-cic-ids2018.s3.ca-central-1.amazonaws.com/MachineLearningCSV/MachineLearningCVE/'
-URL_IDS2017 = 'http://cicresearch.ca/CICDataset/CIC-IDS-2017/Dataset/MachineLearningCSV/MachineLearningCVE/'
+URL_IDS2018 = ('https://cse-cic-ids2018.s3.ca-central-1.amazonaws.com/'
+               'Processed%20Traffic%20Data%20for%20ML%20Algorithms/')
+URL_IDS2017 = ('http://cicresearch.ca/CICDataset/CIC-IDS-2017/Dataset/'
+               'MachineLearningCSV/MachineLearningCVE/')
 URL_ZENODO_D1 = 'https://zenodo.org/records/6907252/files/D1_train.csv?download=1'
 
-ARCHIVOS_2018 = [
-    '02-14-2018.csv', '02-15-2018.csv', '02-16-2018.csv', '02-20-2018.csv',
-    '02-21-2018.csv', '02-22-2018.csv', '02-23-2018.csv', '02-28-2018.csv',
-    '03-01-2018.csv', '03-02-2018.csv',
+# El bucket S3 publica los CICFlowMeter por día (nombres largos); los guardamos
+# con la nomenclatura de MachineLearningCSV usada en docs/ml/viabilidad-datasets.md.
+MAPEO_2018 = [
+    ('Wednesday-14-02-2018_TrafficForML_CICFlowMeter.csv', '02-14-2018.csv'),
+    ('Thursday-15-02-2018_TrafficForML_CICFlowMeter.csv',  '02-15-2018.csv'),
+    ('Friday-16-02-2018_TrafficForML_CICFlowMeter.csv',    '02-16-2018.csv'),
+    ('Thuesday-20-02-2018_TrafficForML_CICFlowMeter.csv',  '02-20-2018.csv'),
+    ('Wednesday-21-02-2018_TrafficForML_CICFlowMeter.csv', '02-21-2018.csv'),
+    ('Thursday-22-02-2018_TrafficForML_CICFlowMeter.csv',  '02-22-2018.csv'),
+    ('Friday-23-02-2018_TrafficForML_CICFlowMeter.csv',    '02-23-2018.csv'),
+    ('Wednesday-28-02-2018_TrafficForML_CICFlowMeter.csv', '02-28-2018.csv'),
+    ('Thursday-01-03-2018_TrafficForML_CICFlowMeter.csv',  '03-01-2018.csv'),
+    ('Friday-02-03-2018_TrafficForML_CICFlowMeter.csv',    '03-02-2018.csv'),
 ]
+
 ARCHIVOS_2017 = [
     'Monday-WorkingHours.pcap_ISCX.csv',
     'Tuesday-WorkingHours.pcap_ISCX.csv',
@@ -57,7 +69,8 @@ ARCHIVOS_2017 = [
 
 # (dataset, nombre_local, url, dir_destino)
 MANIFIESTO = (
-    [('IDS2018', f, URL_IDS2018 + f, 'datasets/CSE-CIC-IDS2018') for f in ARCHIVOS_2018]
+    [('IDS2018', local, URL_IDS2018 + remoto, 'datasets/CSE-CIC-IDS2018')
+     for remoto, local in MAPEO_2018]
     + [('IDS2017', f, URL_IDS2017 + f, 'datasets/CIC-IDS2017') for f in ARCHIVOS_2017]
     + [('SQLi', 'D1_train.csv', URL_ZENODO_D1, 'datasets/SQLi_Zenodo')]
     # CSIC 2010: la fuente original (isi.csic.es) suele estar caída; espejos
@@ -121,6 +134,12 @@ def verificar_csv(ruta: Path):
 
 
 def main():
+    # Sin TTY el stdout va bufferizado: forzar línea a línea para ver progreso
+    try:
+        sys.stdout.reconfigure(line_buffering=True, errors='replace')
+    except (AttributeError, ValueError):
+        pass
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--solo', choices=['IDS2018', 'IDS2017', 'SQLi', 'CSIC2010'],
                     help='descarga solo un dataset')

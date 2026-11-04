@@ -5,6 +5,36 @@
 
 ## Última entrada
 
+[28] M0 LINEA BASE: REPLAY SQLIGUARD V5 CONTRA EL CORPUS C3 (PUERTA M0 CUMPLIDA)
+     - Motivo: el plan ML v6 (docs/PLAN_ML_V6.md) exige antes de tocar codigo
+       un numero formal del "antes": FP/dia del modelo v5 sobre el corpus C3
+       etiquetado (276.098 filas, 72 h).
+     - Script nuevo: entrenar/evaluar_ml_c3.py. Repasa el corpus archivado
+       (evidencia/db_archive/intrusiones_v5_c3-72h_20261104_161736.db, modo
+       read-only, sin capturar red) y aplica la logica de clasificacion
+       auditada de scripts/clasificar_c3.py como etiqueta de verdad.
+     - Determinismo 100 %: el replay reproduce 275.744/275.744 decisiones SQLi
+       vivas de la corrida C3 (mismo modelo, mismo umbral 0,30, mismas 9
+       features de features_json). Latencia 0,003 ms/prediccion.
+     - Numeros del "antes": canal ML v5 en C3 = 276.007 alertas/72 h =
+       92.004,5 FP/dia; SQLiGuard replay = 275.835 alertas (91.924 FP/dia),
+       precision 0,00025 y recall 1,0 (las 69 senales reales tambien las
+       dispara, con P identica 0,7842: mismo vector degenerado).
+     - Evidencia del diagnostico: 275.102 filas (99,64 %) son vectores en cero
+       (sin puertos/trafico) y TODAS se alertan (P media 0,68) -> defecto nº 1
+       confirmado con numeros versionables.
+     - Salidas versionadas (agregados, sin IPs): entrenar/resultados/
+       M0_linea_base.md y metricas_v6_M0.txt. Nota de entorno: .pkl v5
+       serializados con scikit-learn 1.8.0, venv con 1.9.0; el determinismo
+       100 % valida que la inferencia no cambio.
+     - Script de datasets: scripts/descargar_datasets_v6.py (reanudacion,
+       verificacion, reporte). Decision de descarga documentada en
+       docs/ML_V6_DESARROLLO.md §3.2: 2018+2017+D1 necesarios, 2019 diferido
+       (30 GB; subconjunto si M3 lo pide), 2020 no necesario.
+     - Pendiente de M0: estudio de fuga Dst Port (--fuga) cuando termine la
+       descarga de IDS2018.
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 TAREAS IDS/IPS - ESTADO
 
 [22] SELLOS DE LOGS: .sha256 -> .sha512 (EXTENSION = ALGORITMO) Y FORMATO sha512sum

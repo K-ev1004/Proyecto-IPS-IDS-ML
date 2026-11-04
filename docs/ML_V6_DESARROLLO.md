@@ -78,6 +78,23 @@ Notas de descarga:
   `datasets/` está en `.gitignore`; sanitizar con `_sanear_muestra_sqli`
   (sin credenciales) y publicar solo agregados en docs.
 
+### 3.2 Decisión de descarga (2026-11-04, M0)
+
+Evaluada la necesidad real de cada dataset contra el plan y `MAPEO_CLASES`
+del generador:
+
+| Dataset | Veredicto | Justificación |
+|---|---|---|
+| CSE-CIC-IDS2018 | **Descargar** (~6,4 GB) | Clases volumétricas/explotación + ablation de fuga M0/M3. OJO: el plan estimaba 1,7 GB; el análisis de viabilidad mide 6,4 GB (02-20-2018 pesa 3,9 GB). El bucket S3 oficial sirve los CICFlowMeter por día (`Processed Traffic Data for ML Algorithms/`), no el reempaquetado MachineLearningCSV; mismo contenido. |
+| CIC-IDS2017 | **Descargar** (~230 MB) | Única fuente de `Port_Scanner` (viabilidad §5) + ataques web del viernes. |
+| CIC-DDoS2019 | **Diferido** | Opcional según plan ("hoy lo cubre la heurística"). El set completo pesa ~30 GB (TFTP solo 9,3 GB). Si M3 muestra debilidad en DDoS/UDP, descargar subconjunto: UDPLag (158 MB) + Syn (637 MB) + DrDoS_LDAP (917 MB). |
+| CIC-IDS2020 | **No necesario** | No está en el plan ni en `MAPEO_CLASES`; sus clases solapan 2018/2019 y no aporta cobertura nueva. Alcance de tesis innecesario. |
+| SQLi Zenodo D1 | **Descargar** (~250 MB) | Entrenamiento del detector de payload M2. |
+| CSIC 2010 | Opcional (si hay espejo) | Benigno HTTP adicional para M2; la fuente original suele estar caída. |
+
+La descarga usa `scripts/descargar_datasets_v6.py` (reanudación + verificación
+de tamaño + reporte en `entrenar/resultados/descargas_v6.txt`).
+
 ### 3.1 Corpus HTTP benigno de UNIPAZ (paso nuevo, crítico)
 
 Es la pieza que faltó siempre: sin benignos reales, cualquier modelo aprende a
