@@ -103,9 +103,12 @@ marcar todo. Plan de captura:
 > **Ajuste 2026-11-04 (medido, riesgo R6 confirmado):** el tráfico UNIPAZ es
 > 99,998 % no-HTTP-plano (C3: 5 de 276.007 filas con puerto web; prueba en
 > vivo del grabber: 0 peticiones en 30 s de SPAN). La fuente **primaria** del
-> corpus benigno/ataque de payload pasa a ser **CSIC 2010** (espejo completo
-> en HF, `ittailup/csic`, ~610K peticiones HTTP de texto, descargado por
-> `scripts/descargar_datasets_v6.py`). El grabber UNIPAZ queda corriendo como
+> corpus benigno/ataque de payload pasa a ser **CSIC 2010**, en dos copias
+> complementarias verificadas: `csic_database.csv` de Kaggle (61.066 filas,
+> columnas parseadas, aportada manualmente) y el espejo HF
+> `b1nch3f/csic-dataset` (96.668 filas con la petición HTTP cruda —el texto
+> que come el TF-IDF— y split train/validation/test ya hecho: 72.000
+> Normal / 24.668 Anomalous). El grabber UNIPAZ queda corriendo como
 > **complemento best-effort**: lo que capture en la ventana de sombra se suma
 > al corpus real; no se bloquea M2 por su volumen.
 

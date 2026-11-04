@@ -48,16 +48,21 @@ URL_IDS2017_ZIP = ('https://huggingface.co/datasets/bencorn/CICIDS2017/resolve/'
                    'main/csvs/MachineLearningCSV.zip')
 URL_ZENODO_D1 = ('https://zenodo.org/api/records/6907252/files/'
                  'SLQ%20Injection%20Attack%20for%20training%20(D1).csv/content')
-# CSIC 2010 COMPLETO via espejo publico en Hugging Face (ittailup/csic).
-# 2026-11-04: UNB/ISI elimino las descargas directas y Kaggle exige cuenta;
-# este espejo trae las peticiones HTTP originales en parquet (~610K filas).
-# Es el benigno/ataque de payload PRIMARIO para M2: el trafico UNIPAZ resulto
-# 99,998 % no-HTTP-plano (C3: 5 de 276K; prueba en vivo: 0 req/30 s), limite
-# R6 del plan. El grabber sigue corriendo como complemento, no como base.
-URL_CSIC = 'https://huggingface.co/datasets/ittailup/csic/resolve/main/data/'
+# CSIC 2010: peticiones HTTP de texto para el detector de payload (M2).
+# Dos fuentes complementarias, ambas verificadas fila a fila:
+#   1. csic_database.csv (Kaggle, 61.066 filas, columnas parseadas +
+#      classification Normal/Anomalous) — copiado a mano por el usuario
+#      el 2026-11-04 (29,5 MB); no re-descargar: dataset/ es gitignored.
+#   2. Espejo HF b1nch3f/csic-dataset: request COMPLETA como texto crudo
+#      (lo que come el TF-IDF), 96.668 filas (72.000 Normal / 24.668
+#      Anomalous) con split train/validation/test ya hecho.
+# NOTA: el espejo ittailup/csic de HF NO es CSIC 2010 (es prosa literaria
+# en espanol; se descarto tras verificar contenido).
+URL_CSIC_B1 = 'https://huggingface.co/datasets/b1nch3f/csic-dataset/resolve/main/data/'
 CSIC_PARQUETS = [
-    'train-00000-of-00002-e4f56b13e9287224.parquet',
-    'train-00001-of-00002-721128c0f7e4ca2b.parquet',
+    'b1_train-00000-of-00001.parquet',
+    'b1_validation-00000-of-00001.parquet',
+    'b1_test-00000-of-00001.parquet',
 ]
 
 # El bucket S3 publica los CICFlowMeter por día (nombres largos); los guardamos
@@ -83,7 +88,8 @@ MANIFIESTO = (
     + [('IDS2017', 'MachineLearningCSV.zip', URL_IDS2017_ZIP, 'datasets/CIC-IDS2017')]
     + [('SQLi', 'D1_train.csv', URL_ZENODO_D1, 'datasets/SQLi_Zenodo')]
     # CSIC 2010: peticiones HTTP completas (texto) para el detector de payload
-    + [('CSIC2010', f, URL_CSIC + f, 'datasets/CSIC2010') for f in CSIC_PARQUETS]
+    + [('CSIC2010', f, URL_CSIC_B1 + f.replace('b1_', ''), 'datasets/CSIC2010')
+       for f in CSIC_PARQUETS]
 )
 
 REPORTE = BASE_DIR / 'entrenar' / 'resultados' / 'descargas_v6.txt'

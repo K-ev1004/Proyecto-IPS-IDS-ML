@@ -38,3 +38,12 @@
 
 ## corrida 2026-11-04T18:04:43+00:00
 | IDS2017 | MachineLearningCSV.zip | ok | 235,102,953 | 8 CSV extraidos, min 79 columnas | OK |
+
+## corrida 2026-11-04T18:37:19+00:00
+| CSIC2010 | train-00000-of-00002-e4f56b13e9287224.parquet | ok | 308,251,435 | 1 | REVISAR |
+| CSIC2010 | train-00001-of-00002-721128c0f7e4ca2b.parquet | ok | 221,716,936 | 1 | REVISAR |
+
+## corrida 2026-11-04T18:39:28+00:00
+| CSIC2010 | b1_train-00000-of-00001.parquet | ya_estaba | 5,995,489 | 3 | OK |
+| CSIC2010 | b1_validation-00000-of-00001.parquet | ya_estaba | 1,497,962 | 3 | OK |
+| CSIC2010 | b1_test-00000-of-00001.parquet | ya_estaba | 3,213,856 | 3 | OK |
