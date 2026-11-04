@@ -47,3 +47,4 @@ threadpoolctl==3.6.0
 tqdm==4.70.0
 tzdata==2026.3
 urllib3==2.7.0
+pyarrow==26.0.1

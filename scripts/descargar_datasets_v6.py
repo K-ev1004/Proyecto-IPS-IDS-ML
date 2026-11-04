@@ -48,6 +48,17 @@ URL_IDS2017_ZIP = ('https://huggingface.co/datasets/bencorn/CICIDS2017/resolve/'
                    'main/csvs/MachineLearningCSV.zip')
 URL_ZENODO_D1 = ('https://zenodo.org/api/records/6907252/files/'
                  'SLQ%20Injection%20Attack%20for%20training%20(D1).csv/content')
+# CSIC 2010 COMPLETO via espejo publico en Hugging Face (ittailup/csic).
+# 2026-11-04: UNB/ISI elimino las descargas directas y Kaggle exige cuenta;
+# este espejo trae las peticiones HTTP originales en parquet (~610K filas).
+# Es el benigno/ataque de payload PRIMARIO para M2: el trafico UNIPAZ resulto
+# 99,998 % no-HTTP-plano (C3: 5 de 276K; prueba en vivo: 0 req/30 s), limite
+# R6 del plan. El grabber sigue corriendo como complemento, no como base.
+URL_CSIC = 'https://huggingface.co/datasets/ittailup/csic/resolve/main/data/'
+CSIC_PARQUETS = [
+    'train-00000-of-00002-e4f56b13e9287224.parquet',
+    'train-00001-of-00002-721128c0f7e4ca2b.parquet',
+]
 
 # El bucket S3 publica los CICFlowMeter por día (nombres largos); los guardamos
 # con la nomenclatura de MachineLearningCSV usada en docs/ml/viabilidad-datasets.md.
@@ -71,6 +82,8 @@ MANIFIESTO = (
     # IDS2017: ZIP completo (8 CSV oficiales dentro); se extrae plano.
     + [('IDS2017', 'MachineLearningCSV.zip', URL_IDS2017_ZIP, 'datasets/CIC-IDS2017')]
     + [('SQLi', 'D1_train.csv', URL_ZENODO_D1, 'datasets/SQLi_Zenodo')]
+    # CSIC 2010: peticiones HTTP completas (texto) para el detector de payload
+    + [('CSIC2010', f, URL_CSIC + f, 'datasets/CSIC2010') for f in CSIC_PARQUETS]
 )
 
 REPORTE = BASE_DIR / 'entrenar' / 'resultados' / 'descargas_v6.txt'
@@ -126,6 +139,15 @@ def verificar_csv(ruta: Path):
         return -1
 
 
+def verificar_parquet(ruta: Path):
+    """Chequeo de parquet: esquema (instantaneo) con mas de 1 columna."""
+    try:
+        import pyarrow.parquet as pq
+        return len(pq.read_schema(str(ruta)).names)
+    except Exception:
+        return -1
+
+
 def verificar_y_extraer_zip(ruta_zip: Path, destino: Path):
     """Verifica el ZIP y extrae los CSV PLANOS (el generador lista la carpeta
     sin recursion). Devuelve (ok, detalle)."""
@@ -163,7 +185,7 @@ def main():
         pass
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--solo', choices=['IDS2018', 'IDS2017', 'SQLi'],
+    ap.add_argument('--solo', choices=['IDS2018', 'IDS2017', 'SQLi', 'CSIC2010'],
                     help='descarga solo un dataset')
     ap.add_argument('--listar', action='store_true', help='muestra el manifiesto y sale')
     args = ap.parse_args()
@@ -188,7 +210,10 @@ def main():
             resultado = (ds, nombre, 'ok' if ok_zip else 'fallo',
                          destino.stat().st_size, detalle, ok_zip)
         else:
-            cols = verificar_csv(destino) if estado != 'fallo' and destino.exists() else -1
+            if destino.suffix == '.parquet':
+                cols = verificar_parquet(destino)
+            else:
+                cols = verificar_csv(destino) if estado != 'fallo' and destino.exists() else -1
             ok = estado != 'fallo' and cols > 1
             print(f'    -> {estado} ({tam:,} bytes, {cols} columnas)'
                   f'{" [OK]" if ok else " [REVISAR]"}')

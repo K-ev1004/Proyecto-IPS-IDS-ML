@@ -100,16 +100,28 @@ de tamaño + reporte en `entrenar/resultados/descargas_v6.txt`).
 Es la pieza que faltó siempre: sin benignos reales, cualquier modelo aprende a
 marcar todo. Plan de captura:
 
-1. Activar en el laboratorio un *grabber* de payloads HTTP: solo peticiones
-   hacia puertos web (80/443 decodificado si TLS no permite, 8080/8000...),
-   puerto de servicio → efímero, `dport in PUERTOS_WEB`.
-2. Guardar por fila: `ts_utc`, `ip_src` (truncada/anonimizada), `puerto`,
-   `metodo`, `ruta` (sin query si trae `session=`), `payload` sanitizado
-   (sin `password=`, `authorization`, `token`).
-3. Objetivo: ≥ 500K peticiones en 3-7 días (el tráfico del SPAN a ~250 pps lo
-   permite; la mayoría es HTTPS — ver riesgo R6).
-4. Etiquetar todo como `Label=0` (benigno). **Nunca se versiona**; su hash
-   queda en la ficha del experimento.
+> **Ajuste 2026-11-04 (medido, riesgo R6 confirmado):** el tráfico UNIPAZ es
+> 99,998 % no-HTTP-plano (C3: 5 de 276.007 filas con puerto web; prueba en
+> vivo del grabber: 0 peticiones en 30 s de SPAN). La fuente **primaria** del
+> corpus benigno/ataque de payload pasa a ser **CSIC 2010** (espejo completo
+> en HF, `ittailup/csic`, ~610K peticiones HTTP de texto, descargado por
+> `scripts/descargar_datasets_v6.py`). El grabber UNIPAZ queda corriendo como
+> **complemento best-effort**: lo que capture en la ventana de sombra se suma
+> al corpus real; no se bloquea M2 por su volumen.
+
+**Grabber a prueba de apagones** (`scripts/grabber_http_benigno.py`):
+1. Persistencia incremental: SQLite WAL, flush cada 20 paquetes / 5 s — un
+   corte pierde a lo sumo una ventana de 5 s, nunca la corrida.
+2. Reanudación: al arrancar continúa el conteo acumulado (tabla `meta`); el
+   objetivo se mide por peticiones acumuladas, no por tiempo continuo.
+3. Auto-arranque al iniciar sesión: tarea programada que llama a
+   `scripts/grabber_http_benigno.bat` (mismo patrón que la producción C3:
+   corren como usuario porque el venv usa el Python de la Store).
+   Instalación: `schtasks /create /tn "Grabber-HTTP-v6" /tr "<ruta>\scripts\grabber_http_benigno.bat" /sc onlogon /f`
+4. Captura pasiva del SPAN: no genera tráfico, no toca la BD de producción.
+5. Sanitización en ingesta: payload con password/token/authorization →
+   omitido; ruta con `session=` → sin query; IP truncada a segmento
+   (`172.10.x.x`); ruta ≤500, cuerpo ≤2000, sin nada en git.
 
 ---
 
@@ -320,7 +332,7 @@ conservada, sin alerta). Si la hay → alerta con `origen='ml+heuristica'`.
 - [ ] (Opcional) CSIC 2010 → `datasets/CSIC2010/`; CIC-DDoS2019 (diferido: 30 GB; subconjunto si M3 lo pide)
 - [x] M0: `entrenar/evaluar_ml_c3.py` → informe línea base (FP/día "antes": 92.004,5) + fuga documentada (`M0_fuga_puertos.md`)
 - [x] M1: features direccionales en `flujos_red.py` + dataset v6 (`dataset_global_unipaz_v6.csv`, 2,72 M filas × 33 features)
-- [ ] Grabber de HTTP benigno UNIPAZ corriendo en el laboratorio (3-7 días)
+- [x] Grabber de HTTP benigno UNIPAZ montado y a prueba de apagones (persistencia incremental + reanudación + tarea al iniciar sesión). Rol best-effort tras medir R6: la fuente primaria de payload es CSIC 2010
 - [ ] M2 → M3 → M4 → M5 → M6 según puertas de §6
 
 ## 10. Definition of Done (v6 lista)
