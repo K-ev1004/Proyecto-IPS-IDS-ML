@@ -25,7 +25,7 @@ tarea **IDS-Backup** (diaria 06:00 con purga >90 días).
 
 Antes de arrancar, fijar la interfaz donde entra el SPAN en
 `scripts\lanzar_observacion.bat` (ya viene fijada con `set IDS_IFACE=Ethernet`,
-la Realtek con IP `172.10.12.216`).
+la Realtek; su IP es DHCP y en la última corrida era `172.10.12.77`).
 
 ### ⚠️ Hallazgo: Python de la Microsoft Store no corre como SYSTEM
 
@@ -123,3 +123,55 @@ manual de 100 alertas (FP < 5 %) y solo entonces `IDS_IPS_AUTONOMO=1`.
 | Tarea con `LastTaskResult: 101`, log: `"Unable to create process ... El sistema no tiene acceso al archivo"` | El venv usa el Python de la **Microsoft Store** (instalación por usuario); una tarea como SYSTEM no puede ejecutarlo | Las tareas corren como el usuario actual con disparador **al iniciar sesión** (`configurar_tareas_c3.ps1` v2) |
 | El evento de estado no coincide con la corrida al pararlo con Ctrl+C sin `.bat` | `IDS_RUN_ID` solo lo fija el `.bat`; corriendo `corrida_observacion.py` a mano se genera `run-<fecha>-<hora>` | Arrancar siempre vía `lanzar_observacion.bat` (o exportar `IDS_RUN_ID` antes) |
 | `eventos_bd=0` con `pps > 0` | El guard `ip_src == MI_IP` descarta el tráfico propio del sensor (172.10.12.216), que es el que más habla en horas tranquilas | No es un error: la señal de captura viva es `pps > 0` y las líneas `ESTADO` |
+
+---
+
+## 7. Validación tras C3 (ML apagado, solo heurística)
+
+La corrida C3 cerró con 276.098 eventos: **276.007 eran falsos positivos del ML**
+y solo 70 eran señal real de exploit. El detalle y las cifras están en
+`docs/INFORME_C3_DATOS.md`. Decisión: el ML queda como instrumentación y la vía
+de alerta es la heurística.
+
+### 7.1 Qué cambió en el motor
+
+| Cambio | Motivo |
+|---|---|
+| `IDS_ML_ALERTAS=0` (defecto) | El modelo v5 + SQLiGuard no separa ataque de tráfico normal con features de flujo |
+| IGMP/ICMP y puertos 0 no entran al `FlowTracker` | Vector de features en cero puntuaba como SQLi (275.102 FP) |
+| `MI_IP` se deriva de `IDS_IFACE` | Antes usaba `conf.iface` y podía ser otra tarjeta |
+| Exploit solo con SYN de inicio y destino unicast | `SA`/broadcast generaban eventos falsos |
+| 7680 excluido de escaneo y floods | Windows Delivery Optimization (9 FP) |
+| UDP de retorno (443→efímero) no cuenta como flood | 12 FP de QUIC hacia el sensor |
+| DDoS exige ≥10 fuentes distintas | 501 SYN de una IP es SYN Flood, no DDoS |
+| Evidencia en SYN/DDoS/UDP flood | Antes 12 filas no tenían `evidencia_json` |
+| `metricas_escaneo` (bajo umbral) | Sin ella, calibrar el P99 era circular |
+| SQLi: firma fuerte en petición HTTP sí alerta; el resto queda candidato | SQLiGuard ya no arbitra |
+
+### 7.2 Corrida corta (12–24 h)
+
+```powershell
+# 1) Archivar el corpus C3 (deja hash + ficha y libera intrusiones_v5.db)
+& venv\Scripts\python.exe scripts\clasificar_c3.py --bd intrusiones_v5.db
+& venv\Scripts\python.exe scripts\archivar_bd.py --origen intrusiones_v5.db --etiqueta c3-72h
+
+# 2) Validación instrumentada (12 h por defecto)
+.\scripts\lanzar_validacion.bat
+
+# 3) Pruebas controladas mientras corre (desde otro equipo de la misma red)
+#    nmap -sS -p 1-1000 172.10.x.x   -> 1 alerta vertical
+#    nmap -sF -p 1-100 172.10.x.x    -> 1 alerta stealth
+#    nmap -p 445 172.10.0.0/24       -> 1 alerta horizontal
+#    curl https://google.com         -> 0 alertas
+
+# 4) Al terminar: percentiles reales y revisión
+& venv\Scripts\python.exe scripts\calibrar_escaneo.py --horas 12
+```
+
+Criterio de salida: **0 alertas de fondo** (solo las de las pruebas nmap), todas
+con `evidencia_json`, y `metricas_escaneo` con muestras suficientes para fijar
+el P99. Si aparece una alerta inesperada, se documenta como FP y se corrige
+antes de abrir C4.
+
+La BD de la validación se crea nueva en `intrusiones_v5.db`; el corpus C3 queda
+en `evidencia/db_archive/` con su `.ficha.json` y su SHA-256.

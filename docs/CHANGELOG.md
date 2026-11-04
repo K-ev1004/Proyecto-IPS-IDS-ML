@@ -432,3 +432,36 @@ TAREAS IDS/IPS - ESTADO
       comprobacion de captura, revision diaria, cierre, calibracion y paso a
       C4) + decision de hosts de gestion documentada.
     - README: enlace al runbook y defecto de IDS_HOSTS_GESTION.
+
+
+[27] RESCATE C3 + ML FUERA DE ALERTAS + VALIDACION HEURISTICA
+    - Motivo: C3 (72 h, 276.098 filas) cerro con 276.007 falsos positivos del
+      ML y 70 eventos reales de exploit. El analisis completo esta en
+      docs/INFORME_C3_DATOS.md, generado desde la BD con scripts/clasificar_c3.py
+      (solo lectura; CSVs en evidencia/ con IPs, informe en docs con agregados).
+      Hallazgos: 275.102 SQLi son IGMP/sin puertos (vector en cero), 642 son
+      respuestas HTTP/WUDO, 257 "Posible_Exploit" son retorno 5223/5228,
+      9 barridos son WUDO:7680 y 12 "UDP Flood" son retorno QUIC.
+    - IDS_ML_ALERTAS=0 por defecto: on_flow_ready cuenta el flujo pero no
+      predice, no persiste y no notifica. El modelo queda como instrumentacion.
+    - flujos_red.py: solo acepta TCP/UDP con puertos validos. IGMP/ICMP ya no
+      llega al ML con un vector en cero (causa raiz de los 275k FP).
+    - MI_IP se deriva de IDS_IFACE (o IDS_MI_IP), no de conf.iface.
+    - deteccion de exploit con direccion: solo SYN de inicio (sin SA/RST),
+      destino unicast (excluye broadcast .255) y metadatos de direccion.
+    - 7680 (Delivery Optimization) excluido de escaneo vertical y horizontal;
+      UDP de retorno (puerto servicio -> efimero) no cuenta como flood; DDoS
+      exige >=10 fuentes distintas (una sola IP es SYN Flood).
+    - SYN/DDoS/UDP Flood guardan evidencia (ventana, pps, umbral, fuentes).
+    - SQLi: firma fuerte dentro de una peticion HTTP -> alerta; el resto queda
+      como candidato en observacion. Se quitaron exclusiones "host" y
+      "user-agent" que hacian que casi ninguna peticion HTTP se analizara.
+    - Nueva tabla metricas_escaneo (muestras bajo umbral, 1 por par/30 s) y
+      calibrar_escaneo.py reescrito: ancla en max(ts_utc), acepta --desde/--hasta
+      y usa metricas_escaneo para que el P99 no sea circular.
+    - corrida_observacion.py: estado separa con_evidencia y con_features (antes
+      un OR ocultaba las 12 filas sin evidencia) y cuenta muestras_scan.
+    - scripts/lanzar_validacion.bat (12 h) y RUNBOOK §7 con el procedimiento.
+    - Tests: 34/34 (nuevos: WUDO 7680, broadcast, IGMP fuera del tracker, UDP
+      de retorno, DDoS multi-fuente, ML sin alertas, SQLi fuerte/candidata y
+      muestras bajo umbral).

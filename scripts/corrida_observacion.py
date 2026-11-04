@@ -34,12 +34,20 @@ def _fecha_utc():
 def _estado(conn_ids):
     try:
         cur = conn_ids.cursor()
-        total, trazable = cur.execute(
-            "SELECT COUNT(*), SUM(COALESCE(evidencia_json, features_json) IS NOT NULL) "
+        total, con_evid, con_feat = cur.execute(
+            "SELECT COUNT(*), "
+            "       SUM(evidencia_json IS NOT NULL), "
+            "       SUM(features_json IS NOT NULL) "
             "FROM ataques").fetchone()
+        try:
+            muestras = cur.execute(
+                "SELECT COUNT(*) FROM metricas_escaneo").fetchone()[0]
+        except Exception:
+            muestras = -1
         print(f"[{_fecha_utc()}] ESTADO pps~{ids.ewma_pps:.0f} | "
               f"ventanas={len(ids.ventana_scan)} | horizontales={len(ids.barrido_horizontal)} | "
-              f"eventos_bd={total} (trazables: {trazable or 0})", flush=True)
+              f"eventos_bd={total} (con_evidencia: {con_evid or 0}, "
+              f"con_features: {con_feat or 0}) | muestras_scan={muestras}", flush=True)
     except Exception as e:
         print(f"[!] Estado no disponible: {e}", flush=True)
 
@@ -48,11 +56,19 @@ def _resumen_final(conn_ids, run_id):
     try:
         cur = conn_ids.cursor()
         print("\n===== RESUMEN DE CORRIDA =====", flush=True)
-        for tipo, n, modo in cur.execute(
-                "SELECT tipo_ataque, COUNT(*), MIN(modo) FROM ataques "
-                "WHERE run_id=? GROUP BY tipo_ataque ORDER BY COUNT(*) DESC",
-                (run_id,)):
-            print(f"  {n:>7}  [{modo}]  {tipo}", flush=True)
+        for origen, tipo, n, modo in cur.execute(
+                "SELECT origen, tipo_ataque, COUNT(*), MIN(modo) FROM ataques "
+                "WHERE run_id=? GROUP BY origen, tipo_ataque "
+                "ORDER BY COUNT(*) DESC", (run_id,)):
+            print(f"  {n:>7}  [{modo}]  {origen:<10}  {tipo}", flush=True)
+        try:
+            muestras = cur.execute(
+                "SELECT COUNT(*) FROM metricas_escaneo WHERE run_id=?",
+                (run_id,)).fetchone()[0]
+            print(f"  {muestras:>7}  muestras de escaneo bajo umbral (metricas_escaneo)",
+                  flush=True)
+        except Exception:
+            pass
         print("==============================", flush=True)
     except Exception as e:
         print(f"[!] Resumen no disponible: {e}", flush=True)
@@ -64,7 +80,12 @@ def main():
 
     print(f"[*] {ids.VERSION_MOTOR} | run_id={ids.RUN_ID} | "
           f"modo_observacion={ids.IDS_MODO_OBSERVACION} | ips_autonomo={ids.modo_ips_autonomo} | "
+          f"ml_alertas={ids.ML_ALERTAS} | mi_ip={ids.MI_IP} | "
           f"iface={iface or '(por defecto)'}", flush=True)
+    print(f"[*] Umbrales escaneo: externo={ids.PORT_SCAN_THRESHOLD} "
+          f"interno={ids.PORT_SCAN_THRESHOLD_INTERNAL} "
+          f"horizontal={ids.PORT_SCAN_MIN_DESTINOS} ventana={ids.PORT_SCAN_WINDOW_S}s",
+          flush=True)
     print(f"[*] Duración: {'hasta Ctrl+C' if duracion_h <= 0 else f'{duracion_h} h'}", flush=True)
 
     ids.iniciar_monitoreo(iface=iface)

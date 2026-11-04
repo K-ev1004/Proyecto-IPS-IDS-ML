@@ -23,7 +23,7 @@ os.environ.setdefault('IDS_MODO_OBSERVACION', '1')
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ids  # noqa: E402
-from scapy.all import IP, TCP, UDP  # noqa: E402
+from scapy.all import IP, TCP, UDP, ICMP  # noqa: E402
 
 GUARDAR_REAL = ids.guardar_ataque  # referencia al original (prueba de persistencia)
 
@@ -46,6 +46,9 @@ def entorno(monkeypatch):
     ids._ultimo_alerta_por_clave.clear()
     ids._ultimo_alerta_scan_par.clear()
     ids._ultimo_persist_por_clave.clear()
+    ids._ultimo_metrica_scan.clear()
+    ids.syn_por_src.clear()
+    ids.flood_por_dst.clear()
     capturados = []
     monkeypatch.setattr(ids, 'guardar_ataque',
                         lambda *a, **k: capturados.append((a, k)))
@@ -159,6 +162,52 @@ def test_barrido_horizontal_alerta(entorno):
     _, kwargs = horizontales[0]
     assert kwargs['n_destinos'] > ids.PORT_SCAN_MIN_DESTINOS
     assert kwargs['meta_heuristica']['port'] == 445
+
+
+def test_wudo_7680_no_es_escaneo_horizontal(entorno):
+    """Windows Delivery Optimization habla con decenas de pares en 7680."""
+    for i in range(1, 41):
+        ids.detectar_escaneo_puertos(tcp('172.10.12.77', f'172.10.12.{i}', 7680))
+    assert entorno == []
+
+
+def test_broadcast_no_cuenta_como_destino(entorno):
+    """Un SYN a 445 hacia la dirección de broadcast no es un escaneo."""
+    for i in range(1, 40):
+        ids.detectar_escaneo_puertos(tcp('172.10.2.50', '172.10.2.255', i))
+    assert entorno == []
+
+
+def test_muestra_bajo_umbral_se_registra_para_calibrar():
+    """Sin eventos bajo umbral, calibrar el P99 sería circular."""
+    ip_src, ip_dst = '203.0.113.252', '8.8.4.4'
+    ids._ultimo_metrica_scan.clear()
+    ids.conn.execute("DELETE FROM metricas_escaneo WHERE ip_src=?", (ip_src,))
+    ids.conn.commit()
+
+    for p in range(1, 31):  # 30 < umbral externo 50
+        ids.detectar_escaneo_puertos(tcp(ip_src, ip_dst, p))
+
+    fila = ids.conn.execute(
+        "SELECT n_puertos, tipo FROM metricas_escaneo "
+        "WHERE ip_src=? AND ip_dst=? ORDER BY id DESC LIMIT 1",
+        (ip_src, ip_dst)).fetchone()
+    assert fila is not None
+    assert fila[0] >= 25
+    assert fila[1] == 'vertical_corta'
+
+
+def test_igmp_no_entra_al_flowtracker(monkeypatch):
+    """IGMP no tiene puertos: no debe llegar al ML con un vector en cero."""
+    llamadas = []
+    monkeypatch.setattr(ids.flow_tracker, 'procesar_paquete',
+                        lambda *a, **k: llamadas.append((a, k)))
+    ids.procesar_paquete(IP(src='172.10.1.50', dst='224.0.0.1') / ICMP())
+    assert llamadas == []
+
+    # TCP con puerto 0 tampoco es un flujo válido.
+    ids.procesar_paquete(IP(src='172.10.1.50', dst='172.10.1.60') / TCP(sport=40000, dport=0))
+    assert llamadas == []
 
 
 # -----------------------------------------------------------------------------

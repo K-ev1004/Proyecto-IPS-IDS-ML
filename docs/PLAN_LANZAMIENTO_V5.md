@@ -241,3 +241,30 @@ curl https://google.com      # 0 alertas
 `alertas_sospechosas_falso_positivo.csv` contiene direcciones internas reales. Para publicación o
 versionado se usa una copia **anonimizada** (`IN-001`, `EX-001`…) y se conserva el SHA-256 del
 original, conforme a `docs/informe_privacidad_ips.md`.
+
+---
+
+## 9. Addendum (2026-11-04) — resultado de C3 y remediación
+
+C3 completó las 72 h (276.098 filas, BD íntegra). El análisis está en
+`docs/INFORME_C3_DATOS.md`:
+
+| Familia | Filas | Lectura |
+|---|---:|---|
+| SQLi predicho por ML | 275.744 | 275.102 IGMP/sin puertos + 642 respuestas de servicio |
+| Exploit/otros del ML | 263 | retorno Google/WhatsApp, SYN aislado, agregado |
+| Escaneo horizontal 7680 | 9 | Windows Delivery Optimization |
+| UDP Flood sin evidencia | 12 | retorno QUIC al sensor |
+| **Exploit heurístico real** | **70** | 65 externos + 5 internos (1 broadcast) |
+
+El P99 de escaneo no se pudo calcular: `ataques` solo contiene eventos que ya
+superaron el umbral. Por eso se añade `metricas_escaneo` (muestras bajo umbral)
+y `calibrar_escaneo.py` ancla en `max(ts_utc)`.
+
+**Cambio de política:** el ML deja de ser vía de alerta (`IDS_ML_ALERTAS=0`).
+La detección activa es heurística (escaneo, exploit, floods y firmas SQLi
+fuertes en peticiones HTTP). Se valida con 12–24 h instrumentadas antes de
+abrir C4; el procedimiento está en `docs/RUNBOOK_C3.md` §7.
+
+**Puerta de C4 revisada:** 0 alertas de fondo en la validación, 100 % con
+evidencia, y pruebas nmap vertical/stealth/horizontal detectadas.

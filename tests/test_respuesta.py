@@ -32,6 +32,16 @@ def tcp(src, dst, dport, flags='S', carga=None):
     return pkt
 
 
+@pytest.fixture(autouse=True)
+def limpiar_floods():
+    """Evita que los contadores de flood de una prueba contaminen la siguiente."""
+    ids.syn_por_src.clear()
+    ids.flood_por_dst.clear()
+    ids._ultimo_metrica_scan.clear()
+    ids._ultimo_datos_paquete.clear()
+    yield
+
+
 @pytest.fixture
 def modo_produccion(monkeypatch):
     """Simula producción: observación OFF, sin Telegram real ni logs de bloqueo."""
@@ -159,10 +169,21 @@ def test_ddos_ignora_trafico_ack(capturados):
 
 def test_ddos_cuenta_solo_syn(capturados):
     ids.BASE_THRESHOLD_DDOS = 500
-    for _ in range(501):
-        ids.detectar_ddos(tcp('198.51.100.50', '172.10.12.216', 80, flags='S'))
+    # 501 SYN desde 10 fuentes distintas: un DDoS real requiere varias fuentes.
+    for i in range(501):
+        src = f'198.51.100.{50 + (i % 10)}'
+        ids.detectar_ddos(tcp(src, '172.10.12.216', 80, flags='S'))
     assert len(capturados) == 1
     assert capturados[0][0][1] == "DDoS Distribuido"
+    assert capturados[0][1]['meta_heuristica']['n_sources'] >= 10
+
+
+def test_ddos_una_sola_fuente_no_es_ddos(capturados):
+    """501 SYN de una IP es SYN flood (otro detector), no ataque distribuido."""
+    ids.BASE_THRESHOLD_DDOS = 500
+    for _ in range(501):
+        ids.detectar_ddos(tcp('198.51.100.77', '172.10.12.217', 80, flags='S'))
+    assert capturados == []
 
 
 def test_udp_flood_cdn_exenta(capturados):
@@ -194,6 +215,75 @@ def test_host_normal_interno_sigue_detectado_en_exploit(capturados):
     ids.detectar_exploit(tcp('172.10.0.60', '172.10.1.30', 445))
     assert len(capturados) == 1
     assert capturados[0][0][1] == "Posible Exploit"
+
+
+def test_exploit_ignora_respuesta_del_servidor(capturados):
+    """Un SYN+ACK es respuesta, no un intento de explotación saliente."""
+    ids.detectar_exploit(tcp('203.0.113.240', '172.10.1.31', 445, flags='SA'))
+    assert capturados == []
+
+
+def test_exploit_ignora_broadcast(capturados):
+    """C3 registró un SYN a 445 hacia 172.10.2.255: es broadcast, no ataque."""
+    ids.detectar_exploit(tcp('172.10.2.50', '172.10.2.255', 445))
+    assert capturados == []
+
+
+def test_udp_retorno_de_servicio_no_es_flood(capturados):
+    """QUIC 443 -> efímero es retorno al cliente, no un flood entrante."""
+    for _ in range(600):
+        ids.detectar_udp_flood(
+            IP(src='142.250.0.1', dst='172.10.1.32') / UDP(sport=443, dport=52000))
+    assert capturados == []
+
+
+# -----------------------------------------------------------------------------
+# El ML no es vía de alerta (defecto)
+# -----------------------------------------------------------------------------
+
+def test_ml_no_persiste_alertas_por_defecto():
+    assert ids.ML_ALERTAS is False
+    ip = '203.0.113.241'
+    ids.conn.execute("DELETE FROM ataques WHERE ip_src=?", (ip,))
+    ids.conn.commit()
+
+    ids.on_flow_ready(ip, '172.10.1.33', {'Dst Port': 445, 'Protocol': 6})
+
+    n = ids.conn.execute("SELECT COUNT(*) FROM ataques WHERE ip_src=?",
+                         (ip,)).fetchone()[0]
+    assert n == 0
+    assert ids.metricas_trafico.get('ml_suprimidos', 0) >= 1
+
+
+def test_sqli_firma_fuerte_en_http_alerta(modo_produccion):
+    """Una firma inequívoca dentro de una petición HTTP sí alerta."""
+    pkt = tcp('203.0.113.242', '172.10.1.34', 80, flags='PA',
+              carga="GET /q?id=1%27%20UNION%20SELECT%20name%20FROM%20users-- HTTP/1.1\r\n"
+                    "Host: ejemplo\r\n\r\n")
+    ids.detectar_sql_injection(pkt)
+
+    fila = ids.conn.execute(
+        "SELECT modo, tipo_ataque, evidencia_json FROM ataques "
+        "WHERE ip_src='203.0.113.242' ORDER BY id DESC LIMIT 1").fetchone()
+    assert fila is not None
+    assert fila[0] == 'alerta'
+    assert 'SQL Injection' in fila[1]
+    assert 'sqli_signature' in (fila[2] or '')
+    assert len(modo_produccion['telegram']) == 1
+
+
+def test_sqli_firma_fuerte_en_respuesta_no_alerta(modo_produccion):
+    """La misma firma en una respuesta (sin línea de petición) es candidata."""
+    pkt = tcp('203.0.113.243', '172.10.1.35', 52000, flags='PA',
+              carga="HTTP/1.1 200 OK\r\n\r\n1 UNION SELECT name FROM users--")
+    ids.detectar_sql_injection(pkt)
+
+    fila = ids.conn.execute(
+        "SELECT modo FROM ataques WHERE ip_src='203.0.113.243' "
+        "ORDER BY id DESC LIMIT 1").fetchone()
+    assert fila is not None
+    assert fila[0] == 'observacion'
+    assert modo_produccion['telegram'] == []
 
 
 # -----------------------------------------------------------------------------

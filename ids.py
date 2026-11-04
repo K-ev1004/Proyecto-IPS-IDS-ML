@@ -24,6 +24,7 @@ import json
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
+from urllib.parse import unquote_plus
 
 # Módulos de concurrencia
 from threading import Thread           
@@ -117,6 +118,12 @@ RUN_ID = os.environ.get('IDS_RUN_ID') or datetime.now().strftime('run-%Y%m%d-%H%
 # Modo observación: persiste y muestra los candidatos, pero NO alerta ni bloquea.
 IDS_MODO_OBSERVACION = os.environ.get('IDS_MODO_OBSERVACION', '1') == '1'
 
+# El modelo ML v5 + SQLiGuard NO es una vía de alerta válida con features de
+# flujo (corrida C3: 276.007 falsos positivos, ver docs/INFORME_C3_DATOS.md).
+# Por defecto queda como instrumentación: cuenta flujos y no persiste ni
+# notifica nada. Solo se activa explícitamente con IDS_ML_ALERTAS=1.
+ML_ALERTAS = os.environ.get('IDS_ML_ALERTAS', '0') == '1'
+
 # --- VARIABLES PARA EWMA (UMBRALES DINÁMICOS) ---
 ewma_pps = 0.0
 alpha_ewma = 0.1
@@ -138,6 +145,10 @@ DISCOVERY_PORTS = {5353, 5355, 1900, 137, 138}
 # Puertos de servicio con tráfico legítimo masivo (p. ej. 7680 = Delivery
 # Optimization de Windows Update): excluidos de los contadores de flood.
 PUERTOS_SERVICIO_EXCLUIDOS = {7680}
+
+# Puertos cuyo SYN de entrada se considera intento de explotación (decisión
+# heredada de la v1 y validada con el corpus C3: 23, 3389, 135, 22, 445...).
+PUERTOS_EXPLOIT = {135, 139, 445, 3389, 5900, 21, 22, 23, 69}
 
 # Persistencia mínima entre eventos de la familia flood (ver guardar_ataque).
 # Posible Exploit se incluye: un equipo que habla SMB todo el día generaría
@@ -163,13 +174,18 @@ HOSTS_GESTION = set(
     if ip.strip()
 )
 
-# IP local del sistema
+# IP local del sistema. Se deriva de la MISMA interfaz que captura el sniffer
+# (`IDS_IFACE`): antes se tomaba de `conf.iface`, que puede ser otra tarjeta
+# (p. ej. una VirtualBox del laboratorio) y entonces MI_IP no filtraba el
+# tráfico propio del sensor.
+IFACE_IDS = (os.environ.get('IDS_IFACE') or '').strip() or conf.iface
 try:
     from scapy.all import get_if_addr
-    MI_IP = get_if_addr(conf.iface)
-    print(f"[OK] IP local detectada: {MI_IP}")
+    MI_IP = os.environ.get('IDS_MI_IP') or get_if_addr(IFACE_IDS)
+    print(f"[OK] IP local detectada: {MI_IP} (iface={IFACE_IDS})")
 except Exception:
-    MI_IP = "127.0.0.1"
+    MI_IP = os.environ.get('IDS_MI_IP') or "127.0.0.1"
+    print(f"[!] No se pudo leer la IP de {IFACE_IDS}; MI_IP={MI_IP}")
 
 # --- ESTRUCTURAS DE DATOS DE DETECCIÓN ---
 syn_por_src        = defaultdict(list)   # SYN flood: ventana por IP origen
@@ -331,6 +347,10 @@ if os.path.exists(sqli_guard_path) and os.path.exists(sqli_guard_meta_path):
 else:
     print("[!] No se encontró SQLiGuard. La clase Inyeccion_SQL dependerá solo del modelo v5.")
 
+if not ML_ALERTAS:
+    print("[!] ML en modo instrumentación: NO persiste alertas (IDS_ML_ALERTAS=0). "
+          "La detección activa es heurística.")
+
 # Convierte las features CIC del flujo en las features NetFlow que espera
 # SQLiGuard (mismas unidades y orden usados en entrenar_sqli_guard.py).
 def _features_sqli_guard(features_dict):
@@ -437,6 +457,42 @@ def crear_tabla_ataques(conn):
     conn.commit()
     return cur
 
+# Muestras BAJO UMBRAL del detector de escaneo. Sin esta tabla, calibrar con
+# `ataques` es circular: solo contiene lo que ya superó el umbral. Se guarda
+# como máximo una muestra por par cada METRICA_SCAN_CADA_S.
+ESQUEMA_METRICAS_ESCANEO = '''
+    CREATE TABLE IF NOT EXISTS metricas_escaneo (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts_utc     TEXT NOT NULL,
+        run_id     TEXT,
+        ip_src     TEXT,
+        ip_dst     TEXT,
+        protocolo  TEXT,
+        n_puertos  INTEGER DEFAULT 0,
+        n_destinos INTEGER DEFAULT 0,
+        ventana_s  INTEGER DEFAULT 0,
+        umbral     INTEGER DEFAULT 0,
+        tipo       TEXT
+    )
+'''
+METRICA_SCAN_CADA_S = int(os.environ.get('IDS_METRICA_SCAN_CADA', 30))
+_ultimo_metrica_scan = {}
+
+
+def crear_tabla_metricas(conn):
+    cur = conn.cursor()
+    cur.execute(ESQUEMA_METRICAS_ESCANEO)
+    for ddl in (
+        "CREATE INDEX IF NOT EXISTS idx_metricas_scan_ts ON metricas_escaneo(ts_utc)",
+        "CREATE INDEX IF NOT EXISTS idx_metricas_scan_run ON metricas_escaneo(run_id)",
+    ):
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    return cur
+
 
 # Base de datos de la NUEVA producción. `IDS_DB_PATH` permite apuntar a otra
 # ruta (laboratorio, pruebas, una corrida de calibración).
@@ -445,6 +501,7 @@ conn   = sqlite3.connect(ruta_bd, check_same_thread=False)
 cursor = conn.cursor()
 
 cursor = crear_tabla_ataques(conn)
+crear_tabla_metricas(conn)
 
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS bloqueos (
@@ -497,6 +554,16 @@ def on_flow_ready(ip_src, ip_dst, features_dict):
     if modelo_ml is None or features_seleccionadas is None:
         return
 
+    metricas_trafico['flujos_totales'] += 1
+
+    # Instrumentación (defecto): el flujo se cuenta, pero NO se predice, NO se
+    # persiste y NO se alerta. La corrida C3 demostró que este modelo no separa
+    # ataque de tráfico normal con features de flujo.
+    if not ML_ALERTAS:
+        metricas_trafico['detecciones_normal'] += 1
+        metricas_trafico['ml_suprimidos'] = metricas_trafico.get('ml_suprimidos', 0) + 1
+        return
+
     try:
         row = [features_dict.get(f, 0) for f in features_seleccionadas]
         df_in = pd.DataFrame([row], columns=features_seleccionadas)
@@ -523,7 +590,7 @@ def on_flow_ready(ip_src, ip_dst, features_dict):
                 print(f"[X] Error SQLiGuard: {e}")
 
         # --- Decisión final ---
-        metricas_trafico['flujos_totales'] += 1
+        # `flujos_totales` ya se incrementó antes de decidir si el ML alerta.
 
         if es_sqli_guard:
             tipo_final = 'Inyeccion_SQL'
@@ -826,63 +893,96 @@ def procesar_metricas(packet):
 # =============================================================================
 
 def detectar_syn_flood(packet):
-    if packet.haslayer(scapy.TCP) and str(packet[scapy.TCP].flags) == 'S':
-        ip_src  = packet[scapy.IP].src
-        ip_dst  = packet[scapy.IP].dst
-        puerto  = packet[scapy.TCP].dport
+    if not packet.haslayer(scapy.IP) or not packet.haslayer(scapy.TCP):
+        return
+    flags = str(packet[scapy.TCP].flags)
+    if 'S' not in flags or 'A' in flags:
+        return
 
-        if puerto in PUERTOS_SERVICIO_EXCLUIDOS:
-            return
-        # Exención de origen (CDN/DNS): un CDN abre conexiones reales con SYN,
-        # pero nunca a 50 puertos/0,5 s hacia el mismo destino.
-        if _es_origen_exento_scan(ip_src):
-            return
+    ip_src = packet[scapy.IP].src
+    ip_dst = packet[scapy.IP].dst
+    puerto = packet[scapy.TCP].dport
 
-        t       = time.time()
+    if ip_src == MI_IP or _es_destino_no_unicast(ip_dst):
+        return
+    if puerto in PUERTOS_SERVICIO_EXCLUIDOS:
+        return
+    # Exención de origen (CDN/DNS): un CDN abre conexiones reales con SYN,
+    # pero nunca a 50 puertos/0,5 s hacia el mismo destino.
+    if _es_origen_exento_scan(ip_src):
+        return
 
-        # Contador propio de SYN flood (v5: antes compartía dict con DDoS,
-        # que indexa por destino -> contaminación cruzada de contadores).
-        syn_por_src[ip_src].append(t)
-        syn_por_src[ip_src] = [ts for ts in syn_por_src[ip_src] if t - ts <= 0.5]
+    t = time.time()
 
-        if len(syn_por_src[ip_src]) > calcular_umbral_dinamico(BASE_THRESHOLD_SYN_FLOOD):
-            guardar_ataque(ip_src, "SYN Flood", 'TCP', puerto, ip_dst, flag='S')
+    # Contador propio de SYN flood (v5: antes compartía dict con DDoS,
+    # que indexa por destino -> contaminación cruzada de contadores).
+    syn_por_src[ip_src].append(t)
+    syn_por_src[ip_src] = [ts for ts in syn_por_src[ip_src] if t - ts <= 0.5]
+
+    umbral = calcular_umbral_dinamico(BASE_THRESHOLD_SYN_FLOOD)
+    if len(syn_por_src[ip_src]) > umbral:
+        n = len(syn_por_src[ip_src])
+        guardar_ataque(ip_src, "SYN Flood", 'TCP', puerto, ip_dst, flag=flags,
+                       meta_heuristica={
+                           "heuristic": "syn_flood",
+                           "n_syn": n,
+                           "window_s": 0.5,
+                           "pps": round(n / 0.5, 1),
+                           "threshold": umbral,
+                           "policy": "v5",
+                       })
+
 
 def detectar_ddos(packet):
-    if packet.haslayer(scapy.IP):
-        ip_dst   = packet[scapy.IP].dst
-        ip_src   = packet[scapy.IP].src
+    if not packet.haslayer(scapy.IP):
+        return
 
-        if packet.haslayer(scapy.TCP):
-            # Un DDoS es una ráfaga de SYN sin ACK. Contar también data/ACK
-            # (como en la v1) convertía el tráfico legítimo de un servidor
-            # popular en 'DDoS' (causa de los FP hacia 172.10.12.216).
-            flags = str(packet[scapy.TCP].flags)
-            if 'A' in flags:
-                return
-            puerto = packet[scapy.TCP].dport
-            protocolo = 'TCP'
-        elif packet.haslayer(scapy.UDP):
-            puerto = packet[scapy.UDP].dport
-            protocolo = 'UDP'
-        else:
-            return
+    ip_dst = packet[scapy.IP].dst
+    ip_src = packet[scapy.IP].src
 
-        if puerto in DISCOVERY_PORTS or puerto in PUERTOS_SERVICIO_EXCLUIDOS:
+    if ip_src == MI_IP or _es_destino_no_unicast(ip_dst):
+        return
+
+    if packet.haslayer(scapy.TCP):
+        # Un DDoS es una ráfaga de SYN sin ACK. Contar también data/ACK
+        # (como en la v1) convertía el tráfico legítimo de un servidor
+        # popular en 'DDoS' (causa de los FP hacia 172.10.12.216).
+        flags = str(packet[scapy.TCP].flags)
+        if 'S' not in flags or 'A' in flags:
             return
+        puerto = packet[scapy.TCP].dport
+        protocolo = 'TCP'
+    else:
         # El flood UDP tiene su propio detector y umbral; aquí solo TCP.
-        if protocolo != 'TCP':
-            return
-        # Exención de origen (CDN/DNS): sus SYN son apertura real de conexiones.
-        if _es_origen_exento_scan(ip_src):
-            return
+        return
 
-        t = time.time()
-        flood_por_dst[ip_dst].append(t)
-        flood_por_dst[ip_dst] = [ts for ts in flood_por_dst[ip_dst] if t - ts <= 1]
+    if puerto in DISCOVERY_PORTS or puerto in PUERTOS_SERVICIO_EXCLUIDOS:
+        return
+    # Exención de origen (CDN/DNS): sus SYN son apertura real de conexiones.
+    if _es_origen_exento_scan(ip_src):
+        return
 
-        if len(flood_por_dst[ip_dst]) > calcular_umbral_dinamico(BASE_THRESHOLD_DDOS):
-            guardar_ataque(ip_src, "DDoS Distribuido", protocolo, puerto, ip_dst)
+    t = time.time()
+    flood_por_dst[ip_dst].append((t, ip_src, puerto))
+    flood_por_dst[ip_dst] = [e for e in flood_por_dst[ip_dst] if t - e[0] <= 1]
+
+    umbral = calcular_umbral_dinamico(BASE_THRESHOLD_DDOS)
+    entradas = flood_por_dst[ip_dst]
+    # Un DDoS requiere varias fuentes. 501 SYN de UNA sola IP es un SYN flood
+    # (lo detecta su propio detector), no un ataque distribuido.
+    fuentes = {e[1] for e in entradas}
+    if len(entradas) > umbral and len(fuentes) >= 10:
+        guardar_ataque(ip_src, "DDoS Distribuido", protocolo, puerto, ip_dst,
+                       meta_heuristica={
+                           "heuristic": "ddos_syn",
+                           "n_syn": len(entradas),
+                           "n_sources": len(fuentes),
+                           "window_s": 1,
+                           "pps": len(entradas),
+                           "threshold": umbral,
+                           "sources_sample": sorted(fuentes)[:20],
+                           "policy": "v5",
+                       })
 
 # =============================================================================
 # ESCANEO DE PUERTOS v5 — ventana deslizante por par (src, dst)
@@ -894,6 +994,47 @@ def _es_ip_interna(ip):
     except ValueError:
         return False
     return a.is_private or any(a in red for red in REDES_UNIPAZ)
+
+
+def _es_destino_no_unicast(ip):
+    """True para multicast, broadcast o direcciones no enrutables.
+
+    Evita falsos positivos como el SYN a 445 dirigido a 172.10.2.255
+    (broadcast de subred) que aparece en el corpus C3.
+    """
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    if a.is_multicast or a.is_unspecified or a.is_loopback:
+        return True
+    # Broadcast limitado y broadcast de subred (último octeto 255).
+    return ip == '255.255.255.255' or ip.endswith('.255')
+
+
+def _registrar_metrica_scan(clave, ip_src, ip_dst, proto, n_puertos,
+                            n_destinos, ventana_s, umbral, tipo, ahora):
+    """Guarda una muestra de calibración (bajo o sobre umbral), con muestreo.
+
+    La clave del muestreo incluye el tipo para no mezclar la ventana vertical
+    con el barrido horizontal del mismo par.
+    """
+    ultimo = _ultimo_metrica_scan.get(clave, 0)
+    if ahora - ultimo < METRICA_SCAN_CADA_S:
+        return
+    _ultimo_metrica_scan[clave] = ahora
+    try:
+        cursor.execute('''
+            INSERT INTO metricas_escaneo
+                (ts_utc, run_id, ip_src, ip_dst, protocolo, n_puertos,
+                 n_destinos, ventana_s, umbral, tipo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (datetime.now(timezone.utc).isoformat(timespec='seconds'), RUN_ID,
+              ip_src, ip_dst, proto, int(n_puertos), int(n_destinos),
+              int(ventana_s), int(umbral), tipo))
+        conn.commit()
+    except Exception as e:
+        print(f"[!] No se pudo guardar metrica_escaneo: {e}")
 
 
 def _es_origen_exento_scan(ip):
@@ -928,12 +1069,25 @@ def _registrar_scan_vertical(ip_src, ip_dst, proto, puertos, ventana_s, umbral, 
 
 def detectar_barrido_horizontal(ip_src, ip_dst, puerto, proto, ahora):
     """Detecta `nmap -p <puerto> <subred>`: un puerto hacia muchos destinos."""
+    # 7680 = Delivery Optimization de Windows: habla con decenas de pares con
+    # el mismo puerto y no es un escaneo (9 FP medidos en C3).
+    if puerto in PUERTOS_SERVICIO_EXCLUIDOS or puerto in DISCOVERY_PORTS:
+        return
+    if _es_destino_no_unicast(ip_dst):
+        return
+
     clave = (ip_src, puerto)
     destinos = barrido_horizontal[clave]
     destinos[ip_dst] = ahora
     for d in [d for d, ts in destinos.items() if ahora - ts > PORT_SCAN_WINDOW_S]:
         del destinos[d]
     _ultimo_ts_horizontal[clave] = ahora
+
+    # Muestra de calibración aunque todavía no se supere el umbral.
+    if len(destinos) >= max(3, PORT_SCAN_MIN_DESTINOS // 2):
+        _registrar_metrica_scan(('h', ip_src, puerto, proto), ip_src, ip_dst,
+                                proto, 1, len(destinos), PORT_SCAN_WINDOW_S,
+                                PORT_SCAN_MIN_DESTINOS, 'horizontal', ahora)
 
     if len(destinos) > PORT_SCAN_MIN_DESTINOS:
         meta = {
@@ -972,6 +1126,8 @@ def _limpiar_estructuras_scan(ahora):
         barrido_horizontal.pop(clave, None)
     for clave in [k for k, ts in _ultimo_alerta_scan_par.items() if ts < limite]:
         _ultimo_alerta_scan_par.pop(clave, None)
+    for clave in [k for k, ts in _ultimo_metrica_scan.items() if ts < limite]:
+        _ultimo_metrica_scan.pop(clave, None)
 
     # Tope duro de claves: si se supera, se descartan las más antiguas.
     if len(ventana_scan) > PORT_SCAN_MAX_CLAVES:
@@ -1003,6 +1159,8 @@ def detectar_escaneo_puertos(packet):
         return
     if _es_origen_exento_scan(ip_src):
         return
+    if _es_destino_no_unicast(ip_dst):
+        return
 
     if packet.haslayer(scapy.TCP):
         flags = str(packet[scapy.TCP].flags)
@@ -1013,11 +1171,11 @@ def detectar_escaneo_puertos(packet):
     elif packet.haslayer(scapy.UDP):
         proto = 'UDP'
         puerto = packet[scapy.UDP].dport
-        if puerto in DISCOVERY_PORTS:
-            return
     else:
         return
 
+    if puerto in DISCOVERY_PORTS or puerto in PUERTOS_SERVICIO_EXCLUIDOS:
+        return
     if not (0 < puerto <= 65535):
         return
 
@@ -1045,6 +1203,11 @@ def detectar_escaneo_puertos(packet):
 
     # Ventana corta: escaneo clásico
     puertos_corta = {p for (t, p, _) in dq if ahora - t <= PORT_SCAN_WINDOW_S}
+    if len(puertos_corta) >= max(3, umbral // 2):
+        _registrar_metrica_scan(('v', ip_src, ip_dst, proto), ip_src, ip_dst,
+                                proto, len(puertos_corta), 1,
+                                PORT_SCAN_WINDOW_S, umbral, 'vertical_corta',
+                                ahora)
     if len(puertos_corta) > umbral:
         if not en_enfriamiento:
             _registrar_scan_vertical(ip_src, ip_dst, proto, puertos_corta,
@@ -1072,6 +1235,14 @@ def detectar_exploit(packet):
         return
 
     ip_src = packet[scapy.IP].src
+    ip_dst = packet[scapy.IP].dst
+
+    if ip_src == MI_IP:
+        return
+    # Broadcast/multicast no es un intento de explotación (C3: SYN a 445 hacia
+    # 172.10.2.255, broadcast de subred).
+    if _es_destino_no_unicast(ip_dst):
+        return
     # Exención: DNS/CDN + hosts de gestión (ver HOSTS_GESTION). Se mantiene
     # ip_en_rangos porque cada estación Windows habla SMB/RDP de forma normal:
     # sin esa exención masiva, la detección interna de exploits sería un storm
@@ -1079,28 +1250,73 @@ def detectar_exploit(packet):
     if ip_src in IPS_CONFIABLES or ip_en_rangos(ip_src) or ip_src in HOSTS_GESTION:
         return
 
-    ip_dst    = packet[scapy.IP].dst
-    protocolo = 'TCP' if packet.haslayer(scapy.TCP) else 'UDP' if packet.haslayer(scapy.UDP) else 'OTRO'
-
-    if protocolo not in {'TCP', 'UDP'}:
-        return
-
-    puerto = packet[scapy.TCP].dport if protocolo == 'TCP' else packet[scapy.UDP].dport
-    flag   = str(packet[scapy.TCP].flags) if protocolo == 'TCP' else 'N/A'
-
-    if puerto == 0:
-        return
-
-    PUERTOS_EXPLOIT = {135, 139, 445, 3389, 5900, 21, 22, 23, 69}
-
-    if puerto in PUERTOS_EXPLOIT:
-        if protocolo == 'TCP' and flag not in ['S', 'SA']:
+    if packet.haslayer(scapy.TCP):
+        flags = str(packet[scapy.TCP].flags)
+        # Dirección: solo el INICIO de la conexión (SYN sin ACK). Antes se
+        # aceptaba 'SA' (respuesta del servidor) y el tráfico de retorno podía
+        # parecer un exploit. Se permite SYN con ECN (SEC) pero nunca SA/RST.
+        if 'S' not in flags or 'A' in flags or 'R' in flags:
             return
-        guardar_ataque(ip_src, "Posible Exploit", protocolo, puerto, ip_dst, flag=flag,
-                       meta_heuristica={"heuristic": "exploit_port",
-                                        "port": puerto, "flag": flag, "policy": "v5"})
+        protocolo = 'TCP'
+        puerto_src = packet[scapy.TCP].sport
+        puerto = packet[scapy.TCP].dport
+    elif packet.haslayer(scapy.UDP):
+        protocolo = 'UDP'
+        flags = 'N/A'
+        puerto_src = packet[scapy.UDP].sport
+        puerto = packet[scapy.UDP].dport
+    else:
+        return
+
+    if puerto not in PUERTOS_EXPLOIT:
+        return
+    # Respuesta de TFTP (origen 69 hacia efímero) no es una petición.
+    if protocolo == 'UDP' and puerto_src == 69:
+        return
+
+    if _es_ip_interna(ip_src):
+        direccion = 'lateral_interna' if _es_ip_interna(ip_dst) else 'saliente'
+    else:
+        direccion = 'entrante' if _es_ip_interna(ip_dst) else 'externa'
+
+    guardar_ataque(ip_src, "Posible Exploit", protocolo, puerto, ip_dst, flag=flags,
+                   meta_heuristica={"heuristic": "exploit_port",
+                                    "port": puerto, "src_port": puerto_src,
+                                    "flag": flags, "direction": direccion,
+                                    "policy": "v5"})
 
 _MARCAS_SENSIBLES = ('password', 'passwd', 'pwd=', 'authorization', 'token', 'secret')
+
+# Puertos donde una petición HTTP puede llevar SQLi y la dirección es fiable.
+PUERTOS_WEB = {80, 443, 3000, 5000, 8000, 8008, 8080, 8081, 8443, 8888}
+
+_RE_HTTP_PETICION = re.compile(
+    r'^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S+', re.I)
+
+# Firmas que NO aparecen en una petición normal. Solo se alertan si además el
+# payload es una petición HTTP hacia un puerto web (dirección verificada); el
+# resto de coincidencias queda como candidato en observación.
+_RE_SQLI_FUERTE = re.compile(
+    r"(?i)("
+    r"\bunion\b[\s/*+#-]+\bselect\b"
+    r"|['\"]\s*(or|and)\s*['\"]?\d+['\"]?\s*=\s*['\"]?\d+"
+    r"|\b(or|and)\s+['\"]?[a-z0-9_]+['\"]?\s*=\s*['\"]?[a-z0-9_]+['\"]?"
+    r"\s*(--|#|/\*)"
+    r"|\b(sleep|benchmark|pg_sleep|load_file)\s*\("
+    r"|\bwaitfor\s+delay\b"
+    r"|\binformation_schema\b"
+    r"|\binto\s+(out|dump)file\b"
+    r"|\bxp_cmdshell\b"
+    r"|;\s*(drop|delete|update|insert|alter)\b"
+    r")"
+)
+
+_RE_SQLI_GENERICA = re.compile(
+    r"(?i)(\b(select|union|insert|update|delete|drop|alter|exec|cast)\b"
+    r".?(--|#|;|/\|\*/)|"
+    r"('(\s)or(\s)\d+=\d+)|"
+    r"(\bunion\b.*\bselect\b))"
+)
 
 
 def _sanear_muestra_sqli(carga, limite=80):
@@ -1112,63 +1328,104 @@ def _sanear_muestra_sqli(carga, limite=80):
 
 
 def detectar_sql_injection(packet):
-    if packet.haslayer(scapy.Raw):
-        try:
-            ip_src = packet[scapy.IP].src
-            if ip_src in IPS_CONFIABLES or ip_en_rangos(ip_src):
-                return
+    if not packet.haslayer(scapy.IP) or not packet.haslayer(scapy.Raw):
+        return
+    if not packet.haslayer(scapy.TCP):
+        return
 
-            carga = packet[scapy.Raw].load.decode(errors='ignore')
+    try:
+        ip_src = packet[scapy.IP].src
+        ip_dst = packet[scapy.IP].dst
+        if ip_src == MI_IP or ip_src in IPS_CONFIABLES or ip_en_rangos(ip_src):
+            return
 
-            if not carga.isascii() or len(carga) > 1000:
-                return
+        carga = packet[scapy.Raw].load.decode(errors='ignore')
+        if not carga.isascii() or len(carga) > 4000:
+            return
 
-            puerto = packet[scapy.TCP].dport if packet.haslayer(scapy.TCP) else 0
-            if puerto == 0 or puerto > 65535:
-                return
+        puerto = packet[scapy.TCP].dport
+        if puerto == 0 or puerto > 65535:
+            return
 
-            exclusiones = ["order=desc", "session=", "csrf", "user-agent", "host"]
-            if any(excl in carga.lower() for excl in exclusiones):
-                return
+        bajo = carga.lower()
+        exclusiones = ["order=desc", "session=", "csrf"]
+        if any(excl in bajo for excl in exclusiones):
+            return
 
-            sql_pattern = re.compile(
-                r"(?i)(\b(select|union|insert|update|delete|drop|alter|exec|cast)\b"
-                r".?(--|#|;|/\|\*/)|"
-                r"('(\s)or(\s)\d+=\d+)|"
-                r"(\bunion\b.*\bselect\b))"
-            )
-            if sql_pattern.search(carga):
-                ip_dst = packet[scapy.IP].dst
-                # v5: la heurística regex genera CANDIDATOS (persiste en modo
-                # observación), nunca alerta por sí sola — SQLiGuard es el
-                # árbitro (docs/PLAN_LANZAMIENTO_V5.md §3.3).
-                guardar_ataque(ip_src, "SQL Injection", "TCP", puerto, ip_dst,
-                               modo_forzado='observacion',
-                               meta_heuristica={
-                                   "heuristic": "sqli_regex",
-                                   "muestra": _sanear_muestra_sqli(carga),
-                                   "policy": "v5",
-                               })
-        except Exception:
-            pass
+        # Decodificar %27, %20... para que la firma no se evada con URL-encoding.
+        decodificada = unquote_plus(carga)
+
+        # Una firma fuerte SOLO alerta si es una petición HTTP hacia un puerto
+        # web: así se descarta el tráfico de retorno y el texto legítimo.
+        es_peticion_http = (
+            puerto in PUERTOS_WEB
+            and _RE_HTTP_PETICION.match(carga.lstrip()) is not None
+        )
+        firma_fuerte = _RE_SQLI_FUERTE.search(decodificada) is not None
+        firma_generica = _RE_SQLI_GENERICA.search(decodificada) is not None
+
+        if firma_fuerte and es_peticion_http:
+            guardar_ataque(ip_src, "SQL Injection", "TCP", puerto, ip_dst,
+                           meta_heuristica={
+                               "heuristic": "sqli_signature",
+                               "muestra": _sanear_muestra_sqli(carga),
+                               "policy": "v5",
+                           })
+        elif firma_generica:
+            # Candidato: se persiste para auditoría, pero NUNCA alerta por sí
+            # solo (la v1 no tenía esta separación).
+            guardar_ataque(ip_src, "SQL Injection", "TCP", puerto, ip_dst,
+                           modo_forzado='observacion',
+                           meta_heuristica={
+                               "heuristic": "sqli_regex",
+                               "muestra": _sanear_muestra_sqli(carga),
+                               "policy": "v5",
+                           })
+    except Exception:
+        pass
 
 def detectar_udp_flood(packet):
-    if packet.haslayer(scapy.UDP):
-        ip_dst    = packet[scapy.IP].dst
-        ip_src    = packet[scapy.IP].src
-        puerto    = packet[scapy.UDP].dport
+    if not packet.haslayer(scapy.IP) or not packet.haslayer(scapy.UDP):
+        return
 
-        if puerto in DISCOVERY_PORTS:
-            return
-        if _es_origen_exento_scan(ip_src):
-            return
+    ip_src = packet[scapy.IP].src
+    ip_dst = packet[scapy.IP].dst
+    if ip_src == MI_IP or _es_destino_no_unicast(ip_dst):
+        return
 
-        t = time.time()
-        flood_por_dst[ip_dst].append(t)
-        flood_por_dst[ip_dst] = [ts for ts in flood_por_dst[ip_dst] if t - ts <= 1]
+    puerto_src = packet[scapy.UDP].sport
+    puerto = packet[scapy.UDP].dport
 
-        if len(flood_por_dst[ip_dst]) > calcular_umbral_dinamico(BASE_THRESHOLD_UDP_FLOOD):
-            guardar_ataque(ip_src, "UDP Flood", 'UDP', puerto, ip_dst)
+    if puerto in DISCOVERY_PORTS or puerto in PUERTOS_SERVICIO_EXCLUIDOS:
+        return
+    # Dirección: un servicio conocido (<=1023) respondiendo a un puerto efímero
+    # es retorno (QUIC 443, DNS 53, NTP 123...), no un flood entrante. En C3
+    # esto generó 12 "UDP Flood" hacia el propio sensor.
+    if puerto_src <= 1023 and puerto >= 1024:
+        return
+    if _es_origen_exento_scan(ip_src):
+        return
+
+    t = time.time()
+    flood_por_dst[ip_dst].append((t, ip_src, puerto))
+    flood_por_dst[ip_dst] = [e for e in flood_por_dst[ip_dst] if t - e[0] <= 1]
+
+    umbral = calcular_umbral_dinamico(BASE_THRESHOLD_UDP_FLOOD)
+    entradas = flood_por_dst[ip_dst]
+    if len(entradas) > umbral:
+        fuentes = {e[1] for e in entradas}
+        puertos = {e[2] for e in entradas}
+        guardar_ataque(ip_src, "UDP Flood", 'UDP', puerto, ip_dst,
+                       meta_heuristica={
+                           "heuristic": "udp_flood",
+                           "n_pkts": len(entradas),
+                           "n_sources": len(fuentes),
+                           "window_s": 1,
+                           "pps": len(entradas),
+                           "threshold": umbral,
+                           "ports_sample": sorted(puertos)[:20],
+                           "policy": "v5",
+                       })
 
 
 # =============================================================================
@@ -1215,11 +1472,18 @@ def procesar_paquete(packet):
                 "packet_size": packet_len,
             }
 
-            # Alimentar el FlowTracker para ML
-            flow_tracker.procesar_paquete(
-                ip_src, ip_dst, puerto_src, puerto_dst, 
-                protocolo, packet_len, tcp_flags, timestamp
-            )
+            # Alimentar el FlowTracker para ML solo con TCP/UDP completos.
+            # Antes entraba IGMP (protocolo 2) con puertos 0/0: vector de
+            # features en cero -> SQLiGuard lo puntuaba como SQLi. Es la causa
+            # raíz de 275.102 falsos positivos en C3.
+            if (protocolo in ('TCP', 'UDP')
+                    and 0 < puerto_src <= 65535 and 0 < puerto_dst <= 65535
+                    and ip_src != MI_IP
+                    and not _es_destino_no_unicast(ip_dst)):
+                flow_tracker.procesar_paquete(
+                    ip_src, ip_dst, puerto_src, puerto_dst,
+                    protocolo, packet_len, tcp_flags, timestamp
+                )
 
             # Heurística de respaldo (inmediata)
             detectar_syn_flood(packet)

@@ -134,6 +134,13 @@ class FlowTracker:
         self.ultimo_chequeo = time.time()
 
     def procesar_paquete(self, ip_src, ip_dst, puerto_src, puerto_dst, protocolo, packet_len, tcp_flags, timestamp):
+        # Solo TCP/UDP con puertos válidos. ICMP/IGMP y otros protocolos no
+        # tienen puertos y producían un vector de features en cero que el ML
+        # clasificaba como SQLi.
+        if protocolo not in ('TCP', 'UDP'):
+            return
+        if not (0 < puerto_src <= 65535 and 0 < puerto_dst <= 65535):
+            return
         # Para identificar el flujo ignoramos la dirección inicial.
         # Ordenamos las IPs y Puertos de manera predecible para crear la clave
         if ip_src < ip_dst:

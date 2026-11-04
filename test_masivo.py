@@ -204,6 +204,10 @@ try:
     ids.crear_tabla_ataques(ids.conn)   # esquema ÚNICO compartido con producción
     ids._enviar_alerta_async = lambda msg: None   # no spamear Telegram
     ids.ips_activo = False
+    # T3 mide la cadena ML completa (v5 + SQLiGuard): se activa la via de
+    # alerta SOLO dentro de este experimento offline. En produccion el defecto
+    # es IDS_ML_ALERTAS=0 (docs/INFORME_C3_DATOS.md).
+    ids.ML_ALERTAS = True
 
     # Muestra balanceada de D2: 3000 benignos + 3000 SQLi
     d2 = pd.read_csv(os.path.join(BASE_DIR, "datasets", "SQLi_Zenodo", "D2_test.csv"))
