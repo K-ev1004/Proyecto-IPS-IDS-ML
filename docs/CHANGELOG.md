@@ -5,6 +5,38 @@
 
 ## Última entrada
 
+[35] M6 REINGRESO POR CLASE: INYECCION_SQL ACTIVADA (MECANISMO + PRIMERA CLASE)
+     - Cierre de M5 (evidencia en entrenar/resultados/M5_informe_sombra.md):
+       puerta CUMPLIDA — FP reales 0/día (0 de 2.516 candidatos), 0
+       contradicciones, y los 2 únicos candidatos 'alerta' (6-nov) resultaron
+       verdaderos con DOBLE FIRMA: el ML (conf 0,967 y 0,858, bajo el umbral
+       de clase 0,975) confirmado por la heurística del mismo origen ±9 s
+       (SYN externo a puertos 21/22, dir_init=1). El arbitraje funcionó en
+       producción real exactamente como fue diseñado.
+     - Mecanismo M6: la salida de sombra es POR CLASE. Con IDS_ML_SOMBRA=1
+       (modo del motor), toda clase queda en 'grabar' SALVO las que tienen
+       override activador en config/politica_bloqueo.json 'por_clase' — el
+       override ES el pase de reingreso, versionable y auditable. Orden de
+       salir: decidir() devuelve en_sombra y ids.py solo suprime cuando
+       aplica. IDS_POLITICA explícito (heuristica/sombra) gana sobre el
+       default — un cambio, el mismo test suite lo cubre (10 tests).
+     - Primera clase reingresada: Inyeccion_SQL (la de mayor precisión
+       medida: 0,9977 en T6; 0 FP en sombra; y por R6 casi no se dispara en
+       esta red — el reingreso de menor riesgo posible). Su matriz: ml ->
+       alertar 1 h; ml+heuristica -> bloquear 24 h.
+     - Segunda en la fila: Posible_Exploit (2.514 candidatos, 2 alertas
+       verdaderas) — reingresar tras una semana sin FP; las volumétricas
+       después (la heurística ya las cubre).
+     - T7 actualizado: pierna 'default' corre con IDS_ML_SOMBRA=0 (simula
+       operación activa post-M6) — mantiene el dato informativo (905 alertas,
+       301,7 FP/día con ml->alertar global). Batería 6/6 PASS, 60 tests.
+     - Operación: GUI relanzada limpia (el /end dejó un huérfano de las
+       12:46; se mató y arrancó proceso nuevo 13:03 con el código M6).
+       NOTA para producción: tras el reboot de hoy (12:40) la GUI de
+       producción (main) NO está corriendo — su tarea propia debe revisarse
+       aparte (esto solo cubre el laboratorio ml-v6).
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [34] M5 LANZADA: FASE SOMBRA EN TRÁFICO REAL — GUI VISIBLE Y A PRUEBA DE APAGONES
      - Tarea programada "IDS-Lab-M5-V6" (al iniciar sesión, usuario): llama a
        scripts/lanzar_gui_v6.bat -> abre la GUI del laboratorio (interfasc.py,

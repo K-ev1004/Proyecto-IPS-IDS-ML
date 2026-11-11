@@ -119,15 +119,28 @@ def decidir(clase, senal_ml, senal_heuristica):
             contadores v5, dirección) confirma.
 
     Returns:
-        dict: {accion, severidad, origen, duracion_min, etiqueta}
+        dict: {accion, severidad, origen, duracion_min, etiqueta, en_sombra}
         accion en {grabar, alertar, bloquear}; duracion 0 = hasta apagado.
+
+    Modo sombra (IDS_ML_SOMBRA=1, default del motor v6): TODA clase queda en
+    'grabar' SALVO las que tienen override por_clase que las active (ese es
+    el pase de salida del reingreso M6). IDS_POLITICA explícito GANA sobre
+    el default de sombra (heuristica = producción v5 exacta; sombra = nada
+    notifica, sin excepciones).
     """
     base, por_clase = _cargar_config()
-
     modo = (os.environ.get('IDS_POLITICA') or '').strip().lower()
+
+    en_sombra = False
     if modo == 'sombra':
-        base = {k: {'accion': 'grabar', 'duracion_min': 0}
-                for k in base}
+        # Apagón de operación: TODO en grabar, sin excepciones.
+        base = {k: {'accion': 'grabar', 'duracion_min': 0} for k in base}
+        en_sombra = True
+    elif modo == 'heuristica':
+        en_sombra = False  # modo explícito: producción v5 exacta
+    elif os.environ.get('IDS_ML_SOMBRA', '1') == '1':
+        # Modo sombra v6: las clases salen SOLO con override por_clase (M6).
+        en_sombra = True
 
     if senal_ml and senal_heuristica:
         combo = 'ml+heuristica'
@@ -137,10 +150,18 @@ def decidir(clase, senal_ml, senal_heuristica):
         combo = 'heuristica'
     else:
         return {'accion': 'grabar', 'severidad': 'BAJA', 'origen': 'sin_señal',
-                'duracion_min': 0, 'etiqueta': 'CANDIDATO'}
+                'duracion_min': 0, 'etiqueta': 'CANDIDATO', 'en_sombra': True}
 
     celda = dict(base[combo])
-    override = (por_clase.get(clase) or {}).get(combo)
+    overrides_clase = por_clase.get(clase) or {}
+    # El pase de salida de sombra es POR CLASE (basta que la clase tenga un
+    # override activador en cualquier combo); el override del combo específico
+    # afina la celda si existe.
+    hay_override_activo = any(
+        isinstance(v, dict) and v.get('accion') in ACCIONES
+        and v.get('accion') != 'grabar'
+        for v in overrides_clase.values())
+    override = overrides_clase.get(combo)
     if override:
         celda.update(override)
 
@@ -151,12 +172,17 @@ def decidir(clase, senal_ml, senal_heuristica):
         elif combo == 'ml+heuristica':
             celda['accion'] = 'alertar'
 
+    if en_sombra and not hay_override_activo:
+        # En sombra, sin pase de salida por clase: grabar y callar.
+        celda = {'accion': 'grabar', 'duracion_min': 0}
+
     return {
         'accion': celda['accion'],
         'severidad': SEVERIDADES[combo],
         'origen': 'ml+heuristica' if combo == 'ml+heuristica' else combo,
         'duracion_min': int(celda.get('duracion_min', 0)),
         'etiqueta': ETIQUETAS[combo],
+        'en_sombra': bool(en_sombra and celda['accion'] == 'grabar'),
     }
 
 

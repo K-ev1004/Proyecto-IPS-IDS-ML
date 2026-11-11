@@ -1,9 +1,15 @@
 {
-  "_comentario": "Matriz de politica M4 (ML v6). Acciones: grabar | alertar | bloquear. duracion_min: minutos de bloqueo (0 = hasta apagado). Los defaults viven en politica_bloqueo.py (ml+heuristica: bloquear 24h; ml: alertar 1h; heuristica: alertar 24h). 'por_clase' permite el reingreso por clase (M6) segun la evidencia de cada fase: poblar con la precision medida en M5 (fase sombra), una clase a la vez. Estado inicial: SIN overrides por clase (modo sombra conservador: IDS_ML_SOMBRA=1 graba candidatos y nada del ML notifica/bloquea hasta pasar la puerta).",
+  "_comentario": "Matriz de politica M4/M6. Acciones: grabar | alertar | bloquear. duracion_min: minutos de bloqueo (0 = hasta apagado). Con IDS_ML_SOMBRA=1 (modo del motor), toda clase queda en 'grabar' SALVO las que tienen override por_clase: ese override es el PASE DE SALIDA del reingreso M6, una clase a la vez segun su evidencia (FP < 5% semanal). Para dejar TODO en sombra de nuevo: quitar el override de la clase (o IDS_POLITICA=sombra).",
   "defaults": {
     "ml+heuristica": {"accion": "bloquear", "duracion_min": 1440},
     "ml": {"accion": "alertar", "duracion_min": 60},
     "heuristica": {"accion": "alertar", "duracion_min": 1440}
   },
-  "por_clase": {}
+  "por_clase": {
+    "Inyeccion_SQL": {
+      "_motivo": "M6 reingreso 1 (2026-11-11): P=0.9977 en T6 (CSIC test) y 0 FP en sombra M5 (0 candidatos: red 99.998% no-HTTP, R6). La mas precisa y de menor riesgo.",
+      "ml": {"accion": "alertar", "duracion_min": 60},
+      "ml+heuristica": {"accion": "bloquear", "duracion_min": 1440}
+    }
+  }
 }

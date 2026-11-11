@@ -737,8 +737,9 @@ def procesar_candidato_v6(ip_src, ip_dst, features_dict, senal_payload=False,
         metricas_trafico['v6_descartados'] = metricas_trafico.get('v6_descartados', 0) + 1
         return
 
-    if ML_SOMBRA:
-        # Sombras: nada notifica ni bloquea; la decisión vive en ml_candidatos.
+    if ML_SOMBRA and decision.get('en_sombra', True):
+        # Sombras: nada notifica ni bloquea, SALVO las clases con pase de
+        # salida por clase (reingreso M6: en_sombra=False vía override).
         return
 
     # Modo activo (M5/M6, puerta cumplida): ejecuta la acción de la política.
@@ -1668,8 +1669,8 @@ def detectar_payload_v6(packet):
             metricas_trafico['v6_descartados'] = metricas_trafico.get('v6_descartados', 0) + 1
             return
 
-        if ML_SOMBRA:
-            return  # sombra: nada notifica; la evidencia vive en ml_candidatos
+        if ML_SOMBRA and decision.get('en_sombra', True):
+            return  # sombra: solo la clase reingresada (M6) sale del modo
 
         guardar_ataque(
             ip_src, 'Inyeccion_SQL', 'TCP', puerto, ip_dst,

@@ -351,12 +351,12 @@ conservada, sin alerta). Si la hay → alerta con `origen='ml+heuristica'`.
 - M0 ✅ línea base + fuga · M1 ✅ FlowTracker v6 + dataset v6 · M2 ✅ payload
   detector (P=0,9977) · M3 ✅ CatBoost v6 + umbrales por clase · M4 ✅
   matriz de política + ml_candidatos + arbitraje + T7 (6/6 gates PASS)
-- M5 ✅ LANZADA: tarea "IDS-Lab-M5-V6" (al iniciar sesión) abre la GUI del
-  laboratorio con IDS_ML_V6=1 + sombra + run_id lab-m5-shadow; BD con
-  commit inmediato (a prueba de apagones); revisión diaria 3-7 días,
-  puerta: FP reales ≤ 5/día
-- Pendiente M4: contador sombra en la GUI
-- Siguiente: M6 (reingreso por clase con la matriz por_clase)
+- M5 ✅ CUMPLIDA (informe: entrenar/resultados/M5_informe_sombra.md — FP
+  reales 0/día, 2 verdaderos con doble firma, 0 contradicciones) ·
+- M6 ✅ INICIADA: mecanismo de salida de sombra por clase (override en
+  config/politica_bloqueo.json) + Inyeccion_SQL reingresada (alertar 1h ML /
+  bloquear 24h doble firma). Siguientes clases: Posible_Exploit (revisión
+  semanal FP < 5%) y luego volumétricas
 
 ## 10. Definition of Done (v6 lista)
 

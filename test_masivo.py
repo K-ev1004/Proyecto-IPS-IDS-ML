@@ -377,6 +377,8 @@ try:
     cur_c3 = con_c3.cursor()
 
     # La variable IDS_POLITICA controla la matriz; probamos los 3 modos.
+    # La pierna 'default' simula operación ACTIVA (IDS_ML_SOMBRA=0: el estado
+    # post-M6); las piernas sombra/heurística prueban los modos de operación.
     modos = {'sombra': 'grabar', 'heuristica': 'alertar', 'default': None}
     conteo = {m: {'alertas_ml': 0, 'alertas_heur': 0, 'candidatos': 0,
                   'filtrados_entrada': 0, 'senales_reales_alertadas': 0}
@@ -414,8 +416,10 @@ try:
             c['candidatos'] += 1
             if modo == 'default':
                 os.environ.pop('IDS_POLITICA', None)
+                os.environ['IDS_ML_SOMBRA'] = '0'
             else:
                 os.environ['IDS_POLITICA'] = modo
+                os.environ['IDS_ML_SOMBRA'] = '0'
             d = politica_bloqueo.decidir('Posible_Exploit', senal_ml=senal_ml,
                                          senal_heuristica=senal_heur)
             # el 99,97% de los candidatos C3 son de clases ML sin corrobora:

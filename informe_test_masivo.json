@@ -3,7 +3,7 @@
     "total_flujos": 150000,
     "accuracy": 0.8655,
     "f1_macro": 0.7569,
-    "tiempo_pred_s": 0.42,
+    "tiempo_pred_s": 0.4,
     "clases": 7,
     "clases_detalle": {
       "DDoS_Distribuido": {
@@ -220,7 +220,7 @@
     "sql_persistidos": 2343,
     "con_trazabilidad_features_json": 2390,
     "sql_guard_confirmados": 6000,
-    "tiempo_cadena_s": 24.13,
+    "tiempo_cadena_s": 24.25,
     "filas_en_bd_tmp": 2390,
     "precision_cadena": 0.9983,
     "recall_cadena": 0.7797,
@@ -233,8 +233,8 @@
       "logs_bloqueos.log"
     ],
     "linea_bloqueo_escrita": true,
-    "ruta_bloqueos": "C:\\Users\\Ciber-UNIPAZ\\AppData\\Local\\Temp\\ids_logs_test_l2m07zww\\logs_bloqueos.log",
-    "carpeta_logs_temp": "C:\\Users\\Ciber-UNIPAZ\\AppData\\Local\\Temp\\ids_logs_test_l2m07zww"
+    "ruta_bloqueos": "C:\\Users\\Ciber-UNIPAZ\\AppData\\Local\\Temp\\ids_logs_test_js8zknbq\\logs_bloqueos.log",
+    "carpeta_logs_temp": "C:\\Users\\Ciber-UNIPAZ\\AppData\\Local\\Temp\\ids_logs_test_js8zknbq"
   },
   "T6": {
     "umbral": 0.475,
