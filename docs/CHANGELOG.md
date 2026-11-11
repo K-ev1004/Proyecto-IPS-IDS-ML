@@ -5,6 +5,35 @@
 
 ## Última entrada
 
+[36] GUI: BLOQUEO DE VALORES CALIBRADOS + SECCIÓN ML V6 (SOMBRA Y POLÍTICA)
+     - Motivo: la Configuración tenía spinners que editaban en vivo los
+       umbrales calibrados (UMBRAL_ML, SQLiGuard, SYN/DDoS/UDP/escaneo):
+       un despiste recrea el desastre C3 y rompe la comparación de la fase
+       sombra.
+     - Botón de bloqueo (default BLOQUEADO, persistido en QSettings): los 9
+       spinners calibrados quedan deshabilitados con su evidencia en el
+       tooltip (SQLiGuard 0.30 = canónico T2; SYN/DDoS/UDP = 72 h de C3;
+       resto = calibración v5). Desbloquear exige doble confirmación y
+       queda en el log. Los umbrales v6 (CatBoost por clase + payload
+       0.475) se muestran SOLO LECTURA siempre: son artefactos de
+       entrenamiento (cambiarlos = reentrenar).
+     - Nueva sección "ML v6 — Modo Sombra y Política de Bloqueo":
+       * Estado en vivo (refresco 30 s): CatBoost cargado, modo
+         SOMBRA/ACTIVO, candidatos/descartados/alertas (era el contador
+         pendiente de M4).
+       * Toggle SOMBRA ↔ ACTIVO: efectivo AL INSTANTE (politica_bloqueo
+         relee el entorno en cada decisión; sin reiniciar el motor).
+       * Matriz por clase: las 6 clases de ataque con acción ML-solo /
+         doble-firma (grabar/alertar/bloquear) + duración en minutos;
+         "Guardar política" escribe config/politica_bloqueo.json (efectivo
+         al instante). Clases con todo en 'grabar' = sin override (quedan
+         en sombra). "Restaurar sombra" borra por_clase (M6 off).
+       * El JSON de política es la única fuente de verdad: la GUI solo lo
+         edita — auditable con git.
+     - Prueba de arranque: instancia de prueba con BD temporal vivió 25 s
+       sin errores; GUI real reiniciada (13:18) con la sección nueva.
+     - NO se toca produccion (main): todo el trabajo en rama ml-v6.
+
 [35] M6 REINGRESO POR CLASE: INYECCION_SQL ACTIVADA (MECANISMO + PRIMERA CLASE)
      - Cierre de M5 (evidencia en entrenar/resultados/M5_informe_sombra.md):
        puerta CUMPLIDA — FP reales 0/día (0 de 2.516 candidatos), 0

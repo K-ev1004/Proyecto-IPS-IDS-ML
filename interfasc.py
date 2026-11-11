@@ -5,6 +5,7 @@
 
 import sys
 import os
+import json
 import time
 import csv
 import sqlite3
@@ -763,6 +764,22 @@ class IDSInterface(FluentWindow):
 
         layout.addLayout(controls_layout)
 
+        # --- BLOQUEO DE VALORES CALIBRADOS (M0-M5) ---
+        # Los umbrales calibrados con las 72 h de C3 y validados en M0-M5
+        # van bloqueados por defecto: cambiarlos a mitad de la fase sombra
+        # invalida la comparación ML vs heurísticas. Desbloquear exige
+        # confirmación y queda registrado en el log (auditable).
+        bloqueo_layout = QHBoxLayout()
+        self.boton_bloqueo = PushButton("🔒 Valores calibrados bloqueados")
+        self.boton_bloqueo.clicked.connect(self._toggle_bloqueo_calibrados)
+        bloqueo_layout.addWidget(self.boton_bloqueo)
+        self.estado_bloqueo_label = BodyLabel(
+            "Decididos por estudio (M0–M5). Desbloquear solo si sabes lo que haces.")
+        self.estado_bloqueo_label.setStyleSheet("color: #888888; font-size: 12px; font-style: italic;")
+        bloqueo_layout.addWidget(self.estado_bloqueo_label)
+        bloqueo_layout.addStretch()
+        layout.addLayout(bloqueo_layout)
+
         # --- SECCIÓN DE UMBRALES DE DETECCIÓN ---
         layout.addWidget(SubtitleLabel("Umbrales de Detección (Sensibilidad)"))
         
@@ -897,8 +914,30 @@ class IDSInterface(FluentWindow):
         umbrales_ml_layout.addLayout(box_sqli)
 
         layout.addLayout(umbrales_ml_layout)
-        layout.addStretch()
         # --- FIN SECCIÓN UMBRALES ML ---
+
+        # --- SECCIÓN ML V6 (M4/M6): modo sombra + política por clase ---
+        self._construir_seccion_ml_v6(layout)
+
+        # Aplicar el estado de bloqueo persistido (default: BLOQUEADO).
+        # Va al FINAL del setup porque necesita todos los spinners creados.
+        self.spin_calibrados = [
+            self.spin_syn, self.spin_ddos, self.spin_udp,
+            self.spin_scan, self.spin_scan_int, self.spin_scan_win,
+            self.spin_scan_cd, self.spin_umbral_ml, self.spin_umbral_sqli]
+        self._evidencia_calibrados = {
+            self.spin_syn: "Calibrado con las 72 h de C3 (umbral 50 default)",
+            self.spin_ddos: "Calibrado con las 72 h de C3 (umbral 25 default)",
+            self.spin_udp: "Calibrado con las 72 h de C3 (umbral 20 default)",
+            self.spin_scan: "Detector v5 rediseñado, calibrado con corpus C3",
+            self.spin_scan_int: "Detector v5 rediseñado, calibrado con corpus C3",
+            self.spin_scan_win: "Ventana del detector v5 validada en C3",
+            self.spin_scan_cd: "Enfriamiento del detector v5 validado en C3",
+            self.spin_umbral_ml: "0.85 — defecto del motor v5 (M0-M5)",
+            self.spin_umbral_sqli: "0.30 — umbral canónico del proyecto (T2)",
+        }
+        self._set_bloqueo_calibrados(
+            self.settings.value('valores_calibrados_bloqueados', True, type=bool))
 
         layout.addWidget(SubtitleLabel("Acciones Globales"))
         
@@ -935,6 +974,241 @@ class IDSInterface(FluentWindow):
         acciones_layout.addStretch()
         layout.addLayout(acciones_layout)
         layout.addStretch()
+
+    # =========================================================================
+    # M4/M6: bloqueo de calibrados + sección ML v6 (sombra y política)
+    # =========================================================================
+    CLASES_V6 = ('Inyeccion_SQL', 'Posible_Exploit', 'Port_Scanner',
+                 'SYN_Flood', 'DDoS_Distribuido', 'UDP_Flood')
+    RUTA_POLITICA_V6 = os.path.join(BASE_DIR, 'config', 'politica_bloqueo.json')
+
+    def _set_bloqueo_calibrados(self, bloqueado):
+        """Aplica el candado a los umbrales calibrados por estudio."""
+        self.valores_bloqueados = bool(bloqueado)
+        for spin in self.spin_calibrados:
+            spin.setEnabled(not self.valores_bloqueados)
+            spin.setToolTip(self._evidencia_calibrados.get(spin, ''))
+        if self.valores_bloqueados:
+            self.boton_bloqueo.setText("🔒 Valores calibrados bloqueados")
+            self.estado_bloqueo_label.setText(
+                "Decididos por estudio (M0–M5). Desbloquear solo si sabes lo que haces.")
+        else:
+            self.boton_bloqueo.setText("🔓 Valores calibrados DESBLOQUEADOS")
+            self.estado_bloqueo_label.setText(
+                "ATENCIÓN: editando valores de estudio — esto invalida la comparación de la fase sombra.")
+        self.settings.setValue('valores_calibrados_bloqueados',
+                               self.valores_bloqueados)
+        logging.info("Valores calibrados %s",
+                     'BLOQUEADOS' if bloqueado else 'DESBLOQUEADOS (edición manual)')
+
+    def _toggle_bloqueo_calibrados(self):
+        if not self.valores_bloqueados:
+            # Re-bloquear: sin confirmación (es el estado seguro)
+            self._set_bloqueo_calibrados(True)
+            return
+        r1 = QMessageBox.question(
+            self, "Desbloquear valores calibrados",
+            "Los umbrales calibrados fueron decididos por estudio (M0–M5) y "
+            "son la vara de comparación de la fase sombra.\n\n¿Seguro que "
+            "quieres editarlos?",
+            QMessageBox.Yes | QMessageBox.No)
+        if r1 != QMessageBox.Yes:
+            return
+        r2 = QMessageBox.question(
+            self, "Confirmación final",
+            "Un cambio a mitad de fase puede invalidar la evidencia de la "
+            "tesis y el reingreso M6.\n\n¿CONFIRMAS desbloquear?",
+            QMessageBox.Yes | QMessageBox.No)
+        if r2 == QMessageBox.Yes:
+            self._set_bloqueo_calibrados(False)
+
+    def _construir_seccion_ml_v6(self, layout):
+        """Estado del canal ML v6 + matriz de política por clase (M4/M6)."""
+        if ids is None:
+            return
+        layout.addWidget(SubtitleLabel("ML v6 — Modo Sombra y Política de Bloqueo"))
+
+        # Estado vivo (refrescado por timer)
+        self.label_estado_v6 = BodyLabel("ML v6: cargando estado...")
+        self.label_estado_v6.setStyleSheet("color: #888888; font-size: 12px;")
+        layout.addWidget(self.label_estado_v6)
+
+        # Toggle de sombra: efectivo AL INSTANTE (la política lee el entorno
+        # en cada decisión; los candidatos siguen grabándose siempre).
+        self.sombra_cb = CheckBox(
+            "Modo SOMBRA (el ML graba candidatos en ml_candidatos, no notifica)")
+        self.sombra_cb.setChecked(
+            os.environ.get('IDS_ML_SOMBRA', '1') == '1')
+        self.sombra_cb.toggled.connect(self._toggle_sombra_v6)
+        layout.addWidget(self.sombra_cb)
+
+        # Matriz por clase: [clase] [ML solo: acción+duración] [doble firma: acción+duración]
+        info_matriz = BodyLabel(
+            "Política por clase (M6): 'grabar' = la clase queda en sombra (no "
+            "notifica). 'alertar'/'bloquear' con SOMBRA activa = pase de reingreso "
+            "(requiere evidencia FP < 5% semanal). Guardar aplica al instante.")
+        info_matriz.setWordWrap(True)
+        info_matriz.setStyleSheet("color: #888888; font-size: 13px; font-style: italic;")
+        layout.addWidget(info_matriz)
+
+        self.v6_politica_widgets = {}
+        politica = self._leer_politica_v6()
+        por_clase = (politica.get('por_clase') or {}) if politica else {}
+        for clase in self.CLASES_V6:
+            fila = QHBoxLayout()
+            fila.setSpacing(8)
+            nombre = BodyLabel(clase)
+            nombre.setMinimumWidth(140)
+            fila.addWidget(nombre)
+
+            celda = por_clase.get(clase) or {}
+            celda_ml = celda.get('ml') or {}
+            celda_doble = celda.get('ml+heuristica') or {}
+
+            fila.addWidget(BodyLabel("ML solo:"))
+            combo_ml = ComboBox()
+            combo_ml.addItems(['grabar', 'alertar', 'bloquear'])
+            combo_ml.setCurrentText(celda_ml.get('accion', 'grabar'))
+            fila.addWidget(combo_ml)
+
+            fila.addWidget(BodyLabel("min:"))
+            spin_d_ml = SpinBox()
+            spin_d_ml.setRange(0, 10080)  # 0 = hasta apagado; 7 días max
+            spin_d_ml.setValue(int(celda_ml.get('duracion_min', 60)))
+            fila.addWidget(spin_d_ml)
+
+            fila.addWidget(BodyLabel("Doble firma:"))
+            combo_d = ComboBox()
+            combo_d.addItems(['grabar', 'alertar', 'bloquear'])
+            combo_d.setCurrentText(celda_doble.get('accion', 'bloquear'))
+            fila.addWidget(combo_d)
+
+            fila.addWidget(BodyLabel("min:"))
+            spin_d_d = SpinBox()
+            spin_d_d.setRange(0, 10080)
+            spin_d_d.setValue(int(celda_doble.get('duracion_min', 1440)))
+            fila.addWidget(spin_d_d)
+
+            fila.addStretch()
+            self.v6_politica_widgets[clase] = (combo_ml, spin_d_ml, combo_d, spin_d_d)
+            layout.addLayout(fila)
+
+        botones_v6 = QHBoxLayout()
+        self.boton_guardar_politica = PrimaryPushButton("Guardar política")
+        self.boton_guardar_politica.clicked.connect(self._guardar_politica_v6)
+        botones_v6.addWidget(self.boton_guardar_politica)
+
+        self.boton_sombra_total = PushButton("Restaurar sombra (M6 off)")
+        self.boton_sombra_total.clicked.connect(self._restaurar_sombra_v6)
+        botones_v6.addWidget(self.boton_sombra_total)
+        botones_v6.addStretch()
+        layout.addLayout(botones_v6)
+
+        # Umbrales v6: SOLO LECTURA (artefactos de entrenamiento)
+        try:
+            u6 = getattr(ids, 'umbrales_v6', {}) or {}
+            pl = getattr(ids, 'payload_bundle', None) or {}
+            umbrales_txt = ("Umbrales v6 (M3, curvas PR — solo lectura): " +
+                            ", ".join(f"{k}={v}" for k, v in u6.items()) +
+                            f" · Payload (M2, calibrado en validación): "
+                            f"{pl.get('umbral', 'n/d')}")
+        except Exception:
+            umbrales_txt = "Umbrales v6: no cargados (IDS_ML_V6=0)"
+        label_u6 = BodyLabel(umbrales_txt)
+        label_u6.setWordWrap(True)
+        label_u6.setStyleSheet("color: #888888; font-size: 12px; font-style: italic;")
+        layout.addWidget(label_u6)
+
+        # Refresco del estado cada 30 s
+        self._refrescar_estado_v6()
+        self.v6_timer = QTimer()
+        self.v6_timer.timeout.connect(self._refrescar_estado_v6)
+        self.v6_timer.start(30000)
+
+    def _refrescar_estado_v6(self):
+        mt = getattr(ids, 'metricas_trafico', {}) or {}
+        en_sombra = os.environ.get('IDS_ML_SOMBRA', '1') == '1'
+        v6 = getattr(ids, 'modelo_v6', None)
+        self.label_estado_v6.setText(
+            f"CatBoost v6: {'CARGADO' if v6 is not None else 'NO CARGADO (IDS_ML_V6=0)'} | "
+            f"Modo: {'SOMBRA' if en_sombra else 'ACTIVO'} | "
+            f"Candidatos: {mt.get('v6_candidatos', 0):,} · "
+            f"Descartados: {mt.get('v6_descartados', 0):,} · "
+            f"Alertas v6: {mt.get('v6_alertas', 0):,}")
+
+    def _toggle_sombra_v6(self, checked):
+        os.environ['IDS_ML_SOMBRA'] = '1' if checked else '0'
+        # Efectivo al instante: politica_bloqueo.decidir relee el entorno en
+        # cada decisión; sin reiniciar el motor.
+        logging.info("ML v6: modo sombra=%s", checked)
+        self._refrescar_estado_v6()
+
+    def _leer_politica_v6(self):
+        try:
+            with open(self.RUTA_POLITICA_V6, encoding='utf-8') as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return {}
+
+    def _guardar_politica_v6(self):
+        cfg = self._leer_politica_v6() or {}
+        cfg.setdefault('por_clase', {})
+        n_activadas = 0
+        for clase, (combo_ml, spin_d_ml, combo_d, spin_d_d) in \
+                self.v6_politica_widgets.items():
+            celda = {
+                'ml': {'accion': combo_ml.currentText(),
+                       'duracion_min': spin_d_ml.value()},
+                'ml+heuristica': {'accion': combo_d.currentText(),
+                                  'duracion_min': spin_d_d.value()},
+            }
+            activa = any(v['accion'] != 'grabar' for v in celda.values())
+            # Solo las clases reingresadas (alguna acción != grabar) entran
+            # al JSON: 'grabar' en todo = seguir en sombra (sin override).
+            if activa:
+                cfg['por_clase'][clase] = celda
+                n_activadas += 1
+            else:
+                cfg['por_clase'].pop(clase, None)
+        try:
+            with open(self.RUTA_POLITICA_V6, 'w', encoding='utf-8') as fh:
+                json.dump(cfg, fh, ensure_ascii=False, indent=2)
+            logging.info("Política v6 guardada (%d clase(s) activas)",
+                         n_activadas)
+            InfoBar.success("Política guardada",
+                            f"{n_activadas} clase(s) activa(s); el resto en sombra. "
+                            "Efectivo al instante.",
+                            parent=self, position=InfoBarPosition.TOP,
+                            duration=4000)
+        except OSError as e:
+            logging.error("No se pudo guardar la política v6: %s", e)
+            InfoBar.error("Error", f"No se pudo guardar: {e}",
+                          parent=self, position=InfoBarPosition.TOP)
+
+    def _restaurar_sombra_v6(self):
+        r = QMessageBox.question(
+            self, "Restaurar sombra total",
+            "Devuelve TODAS las clases al modo sombra (el ML deja de "
+            "notificar; sigue grabando candidatos).\n\n¿Continuar?",
+            QMessageBox.Yes | QMessageBox.No)
+        if r != QMessageBox.Yes:
+            return
+        cfg = self._leer_politica_v6() or {}
+        cfg['por_clase'] = {}
+        for clase, (combo_ml, spin_d_ml, combo_d, spin_d_d) in \
+                self.v6_politica_widgets.items():
+            combo_ml.setCurrentText('grabar')
+            combo_d.setCurrentText('grabar')
+        try:
+            with open(self.RUTA_POLITICA_V6, 'w', encoding='utf-8') as fh:
+                json.dump(cfg, fh, ensure_ascii=False, indent=2)
+            logging.info("Política v6: todas las clases volvieron a sombra")
+            InfoBar.success("Sombra restaurada",
+                            "Todas las clases en modo sombra.",
+                            parent=self, position=InfoBarPosition.TOP,
+                            duration=4000)
+        except OSError as e:
+            logging.error("No se pudo restaurar la sombra: %s", e)
 
     def setup_timers(self):
         self.timer       = QTimer()
