@@ -16,9 +16,9 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QTableWidgetItem, QHeaderView, QFileDialog, QSplitter,
-    QMessageBox
+    QFrame, QScrollArea, QSizePolicy, QMessageBox
 )
 from PyQt5.QtCore import QTimer, Qt, QThread, pyqtSignal, QSettings, QObject
 from PyQt5.QtGui import QFont, QColor, QBrush
@@ -31,6 +31,14 @@ from qfluentwidgets import (
     SubtitleLabel, BodyLabel, TitleLabel, Theme, setTheme, FluentIcon as FIF,
     SimpleCardWidget
 )
+
+# ScrollArea / FlowLayout de Fluent (1.11.x). Fallback a Qt por si el entorno
+# trae otra versión: el scroll sigue funcionando y los botones no se envuelven.
+try:
+    from qfluentwidgets import ScrollArea, FlowLayout
+except ImportError:  # pragma: no cover - depende de la versión instalada
+    ScrollArea = QScrollArea
+    FlowLayout = QHBoxLayout
 
 # Matplotlib
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -395,6 +403,44 @@ class IDSInterface(FluentWindow):
 
         self.aplicar_estilos_badges()
 
+    def _hacer_scrollable(self, page):
+        """
+        Envuelve el contenido ya construido de una página en un área de scroll.
+
+        El layout original se reparénta a un container interior; así el
+        `addStretch()` final sigue absorbiendo el espacio sobrante cuando el
+        contenido cabe, y aparece scroll vertical cuando no cabe. Sin esto, un
+        QVBoxLayout directo sobre el QWidget comprime o corta el contenido.
+        """
+        contenido = page.layout()
+        if contenido is None:
+            return
+
+        container = QWidget()
+        container.setObjectName(page.objectName() + "_scroll_container")
+        container.setLayout(contenido)
+        container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+
+        area = ScrollArea(page)
+        area.setObjectName(page.objectName() + "_scroll_area")
+        area.setWidgetResizable(True)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # La variante de Qt necesita quitar el marco y el fondo; la de Fluent
+        # ya viene integrada pero acepta el mismo estilo sin efecto adverso.
+        area.setFrameShape(QFrame.NoFrame)
+        area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        # Selector explícito: un stylesheet sin selector se propagaría a las
+        # SimpleCardWidget hijas y les quitaría su fondo Fluent.
+        container.setStyleSheet(
+            f"QWidget#{container.objectName()} {{ background: transparent; }}")
+        area.setWidget(container)
+
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(area)
+
     def setup_dashboard_page(self):
         layout = QVBoxLayout(self.page_dashboard)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -719,23 +765,34 @@ class IDSInterface(FluentWindow):
 
         header_layout = QHBoxLayout()
         header = TitleLabel("Configuración y Operaciones del Sistema")
-        header_layout.addStretch()
+        # Sin los dos addStretch(): forzaban un ancho mínimo de ~1090 px solo
+        # para el título. Con wordWrap + expansivo se adapta a la viewport.
+        header.setWordWrap(True)
+        header.setAlignment(Qt.AlignCenter)
+        header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         header_layout.addWidget(header)
-        header_layout.addStretch()
         layout.addLayout(header_layout)
 
-        controls_layout = QVBoxLayout()
-        controls_layout.setSpacing(20)
+        # --- 1. MOTOR Y RED ---
+        motor_card = SimpleCardWidget()
+        motor_layout = QVBoxLayout(motor_card)
+        motor_layout.setSpacing(16)
+        titulo_motor = SubtitleLabel("Motor y Red")
+        titulo_motor.setWordWrap(True)
+        motor_layout.addWidget(titulo_motor)
 
         red_box = QHBoxLayout()
+        red_box.setSpacing(12)
         red_box.addWidget(SubtitleLabel("Interfaz de Red:"))
         self.combo_iface = ComboBox()
-        self.combo_iface.setMinimumWidth(300)
+        # Antes 300 px fijos: con el rail de navegación desbordaba en ventanas
+        # medianas. 240 px basta y el stretch absorbe el resto.
+        self.combo_iface.setMinimumWidth(240)
         self.combo_iface.addItems(self.listar_interfaces_captura())
         self.combo_iface.currentIndexChanged.connect(lambda _: self._set_running_state(self.monitoreo_activo))
         red_box.addWidget(self.combo_iface)
         red_box.addStretch()
-        controls_layout.addLayout(red_box)
+        motor_layout.addLayout(red_box)
 
         vista_box = QHBoxLayout()
         vista_box.setSpacing(15)
@@ -744,7 +801,8 @@ class IDSInterface(FluentWindow):
         self.auto_scroll_cb.toggled.connect(self.toggle_auto_scroll)
         vista_box.addWidget(self.auto_scroll_cb)
 
-        self.show_all_cb = CheckBox("Mostrar historial completo")
+        self.show_all_cb = CheckBox("Historial completo")
+        self.show_all_cb.setToolTip("Mostrar el historial completo de eventos")
         self.show_all_cb.toggled.connect(self.toggle_show_all)
         vista_box.addWidget(self.show_all_cb)
 
@@ -754,34 +812,86 @@ class IDSInterface(FluentWindow):
         self.max_events_spin.setValue(MAX_EVENTOS_TABLA)
         self.max_events_spin.valueChanged.connect(self.change_max_events)
         vista_box.addWidget(self.max_events_spin)
-        
+
         vista_box.addStretch()
-        controls_layout.addLayout(vista_box)
+        motor_layout.addLayout(vista_box)
 
-        self.ips_activo_cb = CheckBox("MODO IPS (Habilitar Bloqueo Automático)")
+        self.ips_activo_cb = CheckBox("MODO IPS")
+        # CheckBox de Fluent no tiene setWordWrap: texto corto + tooltip con
+        # la explicación completa para no imponer ~580 px de ancho mínimo.
+        self.ips_activo_cb.setToolTip("Habilita el bloqueo automático en MikroTik.")
+        self.ips_activo_cb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.ips_activo_cb.toggled.connect(self.toggle_ips_mode)
-        controls_layout.addWidget(self.ips_activo_cb)
+        motor_layout.addWidget(self.ips_activo_cb)
+        layout.addWidget(motor_card)
 
-        layout.addLayout(controls_layout)
+        # --- 2. ACCIONES GLOBALES (antes quedaba al final, fuera de pantalla) ---
+        acciones_card = SimpleCardWidget()
+        acciones_card_layout = QVBoxLayout(acciones_card)
+        titulo_acciones = SubtitleLabel("Acciones Globales")
+        titulo_acciones.setWordWrap(True)
+        acciones_card_layout.addWidget(titulo_acciones)
+        # FlowLayout: los 7 botones se envuelven solos en vez de exigir
+        # ~2230 px de ancho mínimo en una sola fila.
+        acciones_layout = FlowLayout()
+        acciones_layout.setSpacing(12)
 
-        # --- BLOQUEO DE VALORES CALIBRADOS (M0-M5) ---
+        self.boton_iniciar = PrimaryPushButton("Iniciar Motor")
+        self.boton_iniciar.clicked.connect(self.iniciar_monitoreo)
+
+        self.boton_detener = TransparentPushButton("Detener Motor")
+        self.boton_detener.clicked.connect(self.detener_monitoreo)
+        self.boton_detener.setEnabled(False)
+
+        self.boton_limpiar = TransparentPushButton("Limpiar Registros")
+        self.boton_limpiar.clicked.connect(self.limpiar_tabla)
+
+        self.boton_exportar = TransparentPushButton("Exportar CSV")
+        self.boton_exportar.clicked.connect(self.exportar_csv)
+
+        self.boton_evidencia = TransparentPushButton("Generar evidencia")
+        self.boton_evidencia.clicked.connect(self.generar_evidencia)
+
+        self.boton_tema = TransparentPushButton("Cambiar tema")
+        self.boton_tema.clicked.connect(self.cambiar_tema)
+
+        self.boton_logs = TransparentPushButton("Carpeta de logs")
+        self.boton_logs.clicked.connect(self.abrir_carpeta_logs)
+
+        for b in [self.boton_iniciar, self.boton_detener, self.boton_limpiar,
+                  self.boton_exportar, self.boton_evidencia,
+                  self.boton_tema, self.boton_logs]:
+            acciones_layout.addWidget(b)
+
+        acciones_card_layout.addLayout(acciones_layout)
+        layout.addWidget(acciones_card)
+
+        # --- 3. UMBRALES CALIBRADOS (M0-M5) ---
         # Los umbrales calibrados con las 72 h de C3 y validados en M0-M5
         # van bloqueados por defecto: cambiarlos a mitad de la fase sombra
         # invalida la comparación ML vs heurísticas. Desbloquear exige
         # confirmación y queda registrado en el log (auditable).
+        umbrales_card = SimpleCardWidget()
+        uc_layout = QVBoxLayout(umbrales_card)
+        uc_layout.setSpacing(16)
+
         bloqueo_layout = QHBoxLayout()
-        self.boton_bloqueo = PushButton("🔒 Valores calibrados bloqueados")
+        self.boton_bloqueo = PushButton("🔒 Valores bloqueados")
         self.boton_bloqueo.clicked.connect(self._toggle_bloqueo_calibrados)
         bloqueo_layout.addWidget(self.boton_bloqueo)
         self.estado_bloqueo_label = BodyLabel(
             "Decididos por estudio (M0–M5). Desbloquear solo si sabes lo que haces.")
         self.estado_bloqueo_label.setStyleSheet("color: #888888; font-size: 12px; font-style: italic;")
+        self.estado_bloqueo_label.setWordWrap(True)
+        self.estado_bloqueo_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         bloqueo_layout.addWidget(self.estado_bloqueo_label)
         bloqueo_layout.addStretch()
-        layout.addLayout(bloqueo_layout)
+        uc_layout.addLayout(bloqueo_layout)
 
         # --- SECCIÓN DE UMBRALES DE DETECCIÓN ---
-        layout.addWidget(SubtitleLabel("Umbrales de Detección (Sensibilidad)"))
+        titulo_deteccion = SubtitleLabel("Umbrales de Detección (Sensibilidad)")
+        titulo_deteccion.setWordWrap(True)
+        uc_layout.addWidget(titulo_deteccion)
         
         info_umbrales = BodyLabel(
             "Recomendaciones según el tamaño de la red (a menor número, mayor sensibilidad):\n"
@@ -791,10 +901,14 @@ class IDSInterface(FluentWindow):
         info_umbrales.setWordWrap(True)
         # Usamos un estilo directo para darle un toque sutil y diferenciado
         info_umbrales.setStyleSheet("color: #888888; font-size: 13px; font-style: italic;")
-        layout.addWidget(info_umbrales)
+        info_umbrales.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        uc_layout.addWidget(info_umbrales)
 
-        umbrales_layout = QHBoxLayout()
-        umbrales_layout.setSpacing(15)
+        # 2x2 en vez de una sola fila: evita desbordamiento horizontal.
+        umbrales_grid = QGridLayout()
+        umbrales_grid.setSpacing(15)
+        umbrales_grid.setColumnStretch(0, 1)
+        umbrales_grid.setColumnStretch(1, 1)
 
         # SYN Flood
         box_syn = QVBoxLayout()
@@ -807,7 +921,7 @@ class IDSInterface(FluentWindow):
         self.spin_syn.valueChanged.connect(lambda v: self._update_threshold('thresh_syn', 'BASE_THRESHOLD_SYN_FLOOD', v))
         syn_layout.addWidget(self.spin_syn)
         box_syn.addWidget(syn_card)
-        umbrales_layout.addLayout(box_syn)
+        umbrales_grid.addLayout(box_syn, 0, 0)
 
         # DDoS
         box_ddos = QVBoxLayout()
@@ -820,7 +934,7 @@ class IDSInterface(FluentWindow):
         self.spin_ddos.valueChanged.connect(lambda v: self._update_threshold('thresh_ddos', 'BASE_THRESHOLD_DDOS', v))
         ddos_layout.addWidget(self.spin_ddos)
         box_ddos.addWidget(ddos_card)
-        umbrales_layout.addLayout(box_ddos)
+        umbrales_grid.addLayout(box_ddos, 0, 1)
 
         # UDP Flood
         box_udp = QVBoxLayout()
@@ -833,7 +947,7 @@ class IDSInterface(FluentWindow):
         self.spin_udp.valueChanged.connect(lambda v: self._update_threshold('thresh_udp', 'BASE_THRESHOLD_UDP_FLOOD', v))
         udp_layout.addWidget(self.spin_udp)
         box_udp.addWidget(udp_card)
-        umbrales_layout.addLayout(box_udp)
+        umbrales_grid.addLayout(box_udp, 1, 0)
 
         # Port Scan (v5: métrica = puertos distintos a un destino en ventana)
         box_scan = QVBoxLayout()
@@ -864,13 +978,19 @@ class IDSInterface(FluentWindow):
         self.spin_scan_cd.valueChanged.connect(lambda v: self._update_threshold('scan_cooldown_v5', 'PORT_SCAN_COOLDOWN_PAR', v))
         scan_layout.addWidget(self.spin_scan_cd)
         box_scan.addWidget(scan_card)
-        umbrales_layout.addLayout(box_scan)
+        umbrales_grid.addLayout(box_scan, 1, 1)
 
-        layout.addLayout(umbrales_layout)
+        uc_layout.addLayout(umbrales_grid)
+        layout.addWidget(umbrales_card)
         # --- FIN SECCIÓN UMBRALES ---
 
-        # --- SECCIÓN UMBRALES DEL MOTOR ML (CONFIANZA) ---
-        layout.addWidget(SubtitleLabel("Umbrales del Motor ML (Confianza)"))
+        # --- 4. UMBRALES DEL MOTOR ML v5 (CONFIANZA) ---
+        ml_seccion_card = SimpleCardWidget()
+        ml_seccion_layout = QVBoxLayout(ml_seccion_card)
+        ml_seccion_layout.setSpacing(16)
+        titulo_ml = SubtitleLabel("Umbrales del Motor ML v5 (Confianza)")
+        titulo_ml.setWordWrap(True)
+        ml_seccion_layout.addWidget(titulo_ml)
         info_ml = BodyLabel(
             "El motor ML unifica logueo y bloqueo con un umbral de confianza. "
             "SQLiGuard (2ª etapa) confirma Inyección SQL a partir de su propio umbral.\n"
@@ -880,10 +1000,13 @@ class IDSInterface(FluentWindow):
         )
         info_ml.setWordWrap(True)
         info_ml.setStyleSheet("color: #888888; font-size: 13px; font-style: italic;")
-        layout.addWidget(info_ml)
+        info_ml.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        ml_seccion_layout.addWidget(info_ml)
 
-        umbrales_ml_layout = QHBoxLayout()
-        umbrales_ml_layout.setSpacing(15)
+        umbrales_ml_grid = QGridLayout()
+        umbrales_ml_grid.setSpacing(15)
+        umbrales_ml_grid.setColumnStretch(0, 1)
+        umbrales_ml_grid.setColumnStretch(1, 1)
 
         # UMBRAL ML (unificado)
         box_ml = QVBoxLayout()
@@ -897,7 +1020,7 @@ class IDSInterface(FluentWindow):
         self.spin_umbral_ml.valueChanged.connect(self._update_umbral_ml)
         ml_layout.addWidget(self.spin_umbral_ml)
         box_ml.addWidget(ml_card)
-        umbrales_ml_layout.addLayout(box_ml)
+        umbrales_ml_grid.addLayout(box_ml, 0, 0)
 
         # UMBRAL SQLiGuard (2ª etapa)
         box_sqli = QVBoxLayout()
@@ -911,13 +1034,18 @@ class IDSInterface(FluentWindow):
         self.spin_umbral_sqli.valueChanged.connect(self._update_umbral_sqli)
         sqli_layout.addWidget(self.spin_umbral_sqli)
         box_sqli.addWidget(sqli_card)
-        umbrales_ml_layout.addLayout(box_sqli)
+        umbrales_ml_grid.addLayout(box_sqli, 0, 1)
 
-        layout.addLayout(umbrales_ml_layout)
+        ml_seccion_layout.addLayout(umbrales_ml_grid)
+        layout.addWidget(ml_seccion_card)
         # --- FIN SECCIÓN UMBRALES ML ---
 
-        # --- SECCIÓN ML V6 (M4/M6): modo sombra + política por clase ---
-        self._construir_seccion_ml_v6(layout)
+        # --- 5. ML v6 (M4/M6): modo sombra + política por clase (avanzado) ---
+        v6_card = SimpleCardWidget()
+        v6_layout = QVBoxLayout(v6_card)
+        v6_layout.setSpacing(16)
+        self._construir_seccion_ml_v6(v6_layout)
+        layout.addWidget(v6_card)
 
         # Aplicar el estado de bloqueo persistido (default: BLOQUEADO).
         # Va al FINAL del setup porque necesita todos los spinners creados.
@@ -939,41 +1067,18 @@ class IDSInterface(FluentWindow):
         self._set_bloqueo_calibrados(
             self.settings.value('valores_calibrados_bloqueados', True, type=bool))
 
-        layout.addWidget(SubtitleLabel("Acciones Globales"))
-        
-        acciones_layout = QHBoxLayout()
-        acciones_layout.setSpacing(12)
-        
-        self.boton_iniciar = PrimaryPushButton("Iniciar Motor")
-        self.boton_iniciar.clicked.connect(self.iniciar_monitoreo)
-        
-        self.boton_detener = TransparentPushButton("Detener Motor")
-        self.boton_detener.clicked.connect(self.detener_monitoreo)
-        self.boton_detener.setEnabled(False)
-        
-        self.boton_limpiar = TransparentPushButton("Limpiar Registros")
-        self.boton_limpiar.clicked.connect(self.limpiar_tabla)
-        
-        self.boton_exportar = TransparentPushButton("Exportar Eventos CSV")
-        self.boton_exportar.clicked.connect(self.exportar_csv)
-        
-        self.boton_evidencia = TransparentPushButton("Generar Evidencia Gráfica")
-        self.boton_evidencia.clicked.connect(self.generar_evidencia)
-        
-        self.boton_tema = TransparentPushButton("Alternar Apariencia (Dark/Light)")
-        self.boton_tema.clicked.connect(self.cambiar_tema)
+        # Los textos auxiliares se envuelven en vez de imponer un ancho mínimo
+        # fijo (había labels de hasta 616 px solo por una frase).
+        for lbl in list(self.page_settings.findChildren(BodyLabel)) + \
+                list(self.page_settings.findChildren(SubtitleLabel)):
+            lbl.setWordWrap(True)
 
-        self.boton_logs = TransparentPushButton("Abrir Carpeta de Logs")
-        self.boton_logs.clicked.connect(self.abrir_carpeta_logs)
-
-        for b in [self.boton_iniciar, self.boton_detener, self.boton_limpiar,
-                  self.boton_exportar, self.boton_evidencia,
-                  self.boton_tema, self.boton_logs]:
-            acciones_layout.addWidget(b)
-            
-        acciones_layout.addStretch()
-        layout.addLayout(acciones_layout)
+        # El stretch sigue dentro del container: absorbe el espacio sobrante
+        # cuando todo cabe y desaparece cuando el contenido excede la viewport.
         layout.addStretch()
+
+        # A. Contención: sin esto un QVBoxLayout fijo comprime/corta el contenido.
+        self._hacer_scrollable(self.page_settings)
 
     # =========================================================================
     # M4/M6: bloqueo de calibrados + sección ML v6 (sombra y política)
@@ -989,11 +1094,11 @@ class IDSInterface(FluentWindow):
             spin.setEnabled(not self.valores_bloqueados)
             spin.setToolTip(self._evidencia_calibrados.get(spin, ''))
         if self.valores_bloqueados:
-            self.boton_bloqueo.setText("🔒 Valores calibrados bloqueados")
+            self.boton_bloqueo.setText("🔒 Valores bloqueados")
             self.estado_bloqueo_label.setText(
                 "Decididos por estudio (M0–M5). Desbloquear solo si sabes lo que haces.")
         else:
-            self.boton_bloqueo.setText("🔓 Valores calibrados DESBLOQUEADOS")
+            self.boton_bloqueo.setText("🔓 Valores desbloqueados")
             self.estado_bloqueo_label.setText(
                 "ATENCIÓN: editando valores de estudio — esto invalida la comparación de la fase sombra.")
         self.settings.setValue('valores_calibrados_bloqueados',
@@ -1026,17 +1131,22 @@ class IDSInterface(FluentWindow):
         """Estado del canal ML v6 + matriz de política por clase (M4/M6)."""
         if ids is None:
             return
-        layout.addWidget(SubtitleLabel("ML v6 — Modo Sombra y Política de Bloqueo"))
+        # El título lo pone la card contenedora (setup_settings_page).
 
         # Estado vivo (refrescado por timer)
         self.label_estado_v6 = BodyLabel("ML v6: cargando estado...")
         self.label_estado_v6.setStyleSheet("color: #888888; font-size: 12px;")
+        self.label_estado_v6.setWordWrap(True)
+        self.label_estado_v6.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(self.label_estado_v6)
 
         # Toggle de sombra: efectivo AL INSTANTE (la política lee el entorno
         # en cada decisión; los candidatos siguen grabándose siempre).
-        self.sombra_cb = CheckBox(
-            "Modo SOMBRA (el ML graba candidatos en ml_candidatos, no notifica)")
+        self.sombra_cb = CheckBox("Modo SOMBRA")
+        self.sombra_cb.setToolTip(
+            "El ML graba candidatos en ml_candidatos y no notifica. "
+            "Las clases con override en la matriz siguen activas.")
+        self.sombra_cb.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.sombra_cb.setChecked(
             os.environ.get('IDS_ML_SOMBRA', '1') == '1')
         self.sombra_cb.toggled.connect(self._toggle_sombra_v6)
@@ -1049,56 +1159,85 @@ class IDSInterface(FluentWindow):
             "(requiere evidencia FP < 5% semanal). Guardar aplica al instante.")
         info_matriz.setWordWrap(True)
         info_matriz.setStyleSheet("color: #888888; font-size: 13px; font-style: italic;")
+        info_matriz.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(info_matriz)
 
+        # Matriz compacta: 5 columnas con cabecera en vez de 6 filas de 8
+        # widgets. Antes cada fila exigía ~700 px (nombre con 140 px fijos +
+        # 4 labels + 2 combos + 2 spins) y desbordaba en ventanas medianas.
         self.v6_politica_widgets = {}
         politica = self._leer_politica_v6()
         por_clase = (politica.get('por_clase') or {}) if politica else {}
-        for clase in self.CLASES_V6:
-            fila = QHBoxLayout()
-            fila.setSpacing(8)
-            nombre = BodyLabel(clase)
-            nombre.setMinimumWidth(140)
-            fila.addWidget(nombre)
 
+        matriz = QGridLayout()
+        matriz.setSpacing(10)
+        matriz.setColumnStretch(0, 3)   # clase
+        matriz.setColumnStretch(1, 2)   # acción ML solo
+        matriz.setColumnStretch(2, 1)   # duración ML
+        matriz.setColumnStretch(3, 2)   # acción doble firma
+        matriz.setColumnStretch(4, 1)   # duración doble firma
+        # 150 px en las columnas de duración: el SpinBox de Fluent reserva
+        # ~92 px para los botones ↑↓; con 95 px el lineEdit quedaba en 3 px
+        # y el valor (60 / 1440 / 10080) no se veía. 150 px deja ~58 px útiles.
+        for col, ancho in enumerate((110, 105, 150, 105, 150)):
+            matriz.setColumnMinimumWidth(col, ancho)
+
+        for col, texto in enumerate(("Clase", "ML solo", "min", "Doble firma", "min")):
+            cabecera = BodyLabel(texto)
+            cabecera.setStyleSheet("font-weight: 600;")
+            matriz.addWidget(cabecera, 0, col)
+
+        for fila, clase in enumerate(self.CLASES_V6, start=1):
             celda = por_clase.get(clase) or {}
             celda_ml = celda.get('ml') or {}
             celda_doble = celda.get('ml+heuristica') or {}
 
-            fila.addWidget(BodyLabel("ML solo:"))
+            nombre = BodyLabel(clase)
+            nombre.setWordWrap(True)
+            # Las clases largas ("DDoS_Distribuido" ~224 px) se parten en dos
+            # líneas en vez de imponer ese ancho mínimo a toda la columna.
+            nombre.setFixedWidth(110)
+            nombre.setToolTip(clase)
+            matriz.addWidget(nombre, fila, 0)
+
             combo_ml = ComboBox()
             combo_ml.addItems(['grabar', 'alertar', 'bloquear'])
             combo_ml.setCurrentText(celda_ml.get('accion', 'grabar'))
-            fila.addWidget(combo_ml)
+            combo_ml.setFixedWidth(105)
+            matriz.addWidget(combo_ml, fila, 1)
 
-            fila.addWidget(BodyLabel("min:"))
             spin_d_ml = SpinBox()
             spin_d_ml.setRange(0, 10080)  # 0 = hasta apagado; 7 días max
             spin_d_ml.setValue(int(celda_ml.get('duracion_min', 60)))
-            fila.addWidget(spin_d_ml)
+            spin_d_ml.setFixedWidth(150)
+            spin_d_ml.setToolTip("Minutos (0 = hasta apagado)")
+            matriz.addWidget(spin_d_ml, fila, 2)
 
-            fila.addWidget(BodyLabel("Doble firma:"))
             combo_d = ComboBox()
             combo_d.addItems(['grabar', 'alertar', 'bloquear'])
             combo_d.setCurrentText(celda_doble.get('accion', 'bloquear'))
-            fila.addWidget(combo_d)
+            combo_d.setFixedWidth(105)
+            matriz.addWidget(combo_d, fila, 3)
 
-            fila.addWidget(BodyLabel("min:"))
             spin_d_d = SpinBox()
             spin_d_d.setRange(0, 10080)
             spin_d_d.setValue(int(celda_doble.get('duracion_min', 1440)))
-            fila.addWidget(spin_d_d)
+            spin_d_d.setFixedWidth(150)
+            spin_d_d.setToolTip("Minutos (0 = hasta apagado)")
+            matriz.addWidget(spin_d_d, fila, 4)
 
-            fila.addStretch()
             self.v6_politica_widgets[clase] = (combo_ml, spin_d_ml, combo_d, spin_d_d)
-            layout.addLayout(fila)
+
+        layout.addLayout(matriz)
 
         botones_v6 = QHBoxLayout()
-        self.boton_guardar_politica = PrimaryPushButton("Guardar política")
+        self.boton_guardar_politica = PrimaryPushButton("Guardar")
+        self.boton_guardar_politica.setToolTip("Guardar política y aplicar al instante")
         self.boton_guardar_politica.clicked.connect(self._guardar_politica_v6)
         botones_v6.addWidget(self.boton_guardar_politica)
 
-        self.boton_sombra_total = PushButton("Restaurar sombra (M6 off)")
+        self.boton_sombra_total = PushButton("Restaurar sombra")
+        self.boton_sombra_total.setToolTip("M6 off: todas las clases vuelven a 'grabar'")
         self.boton_sombra_total.clicked.connect(self._restaurar_sombra_v6)
         botones_v6.addWidget(self.boton_sombra_total)
         botones_v6.addStretch()
@@ -1117,6 +1256,7 @@ class IDSInterface(FluentWindow):
         label_u6 = BodyLabel(umbrales_txt)
         label_u6.setWordWrap(True)
         label_u6.setStyleSheet("color: #888888; font-size: 12px; font-style: italic;")
+        label_u6.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(label_u6)
 
         # Refresco del estado cada 30 s
