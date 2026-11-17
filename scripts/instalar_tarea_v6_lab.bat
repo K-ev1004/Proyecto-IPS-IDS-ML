@@ -30,4 +30,6 @@ if errorlevel 1 (
     schtasks /query /tn "%TAREA%" /fo LIST /v
 )
 echo.
-pause
+
+rem El instalador completo llama con /NOPAUSE para no cortar su flujo.
+if /i not "%~1"=="/NOPAUSE" pause

@@ -111,7 +111,8 @@ paquete (SPAN) ──► procesar_paquete (ids.py)
 | `da5c51a` | M6 INICIADA (M5 cerrado + Inyeccion_SQL activa) |
 | `94d6d07` | GUI: bloqueo calibrados + sección ML v6 |
 | `c3546d5` | GUI: configuracion responsive con scroll y matriz v6 compacta (termina el pendiente) |
-| *(este)* | Arranque automático del laboratorio con v6 activo + documentación |
+| `3d8b575` | Arranque automático del laboratorio con v6 activo + documentación |
+| *(este)* | Kit portable Windows (instalador/actualizador/verificador + `.venv` relativo) y paso a paso en el README |
 
 ## 5. Comandos de operación rápida
 
@@ -132,4 +133,11 @@ schtasks /delete /tn "IDS-Lab-V6-Activo" /f
 
 # Freno inmediato sin tocar código: toggle "Modo SOMBRA" en la GUI o IDS_POLITICA=sombra
 # Rollback total a producción v5: IDS_POLITICA=heuristica (o cerrar y usar main)
+
+# Kit portable Windows (no lanza el motor)
+scripts\instalar_windows.bat     # clic derecho -> Ejecutar como administrador
+scripts\actualizar_windows.bat   # git pull + lfs pull + dependencias
+scripts\verificar_windows.bat    # salud: imports, modelos, Npcap, tarea, log
 ```
+
+La portabilidad del laboratorio se documenta en [docs/PORTABILIDAD.md](./PORTABILIDAD.md).

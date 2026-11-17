@@ -20,12 +20,20 @@ rem revisar una semana de alertas del run lab-v6-activo.
 rem ============================================================================
 cd /d "%~dp0.."
 
+rem Configuracion local (.env): formato CLAVE=VALOR, lineas con # se ignoran.
+rem Se lee ANTES de fijar los flags del laboratorio para que estos manden.
+if exist "%~dp0..\.env" (
+    for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0..\.env") do (
+        set "%%A=%%B"
+    )
+)
+
 set IDS_MODO_OBSERVACION=0
 set IDS_IPS_AUTONOMO=0
 set IDS_ML_ALERTAS=0
 set IDS_ML_V6=1
 set IDS_ML_SOMBRA=0
-if not defined IDS_RUN_ID set IDS_RUN_ID=lab-v6-activo
+set IDS_RUN_ID=lab-v6-activo
 set IDS_DURACION_H=0
 set IDS_AUTO_INICIAR=1
 
@@ -33,9 +41,10 @@ rem Interfaz: sin fijar, el motor detecta la del laboratorio. Si se necesita
 rem forzar, descomentar y poner el nombre de la interfaz SPAN.
 rem set IDS_IFACE=Ethernet
 
-rem Intérprete: el proyecto no tiene venv en este checkout. Se usa el Python
-rem del sistema (PyQt5 + qfluentwidgets + CatBoost ya instalados) con fallback.
-set "PY=C:\Users\rojas\AppData\Local\Programs\Python\Python313\python.exe"
+rem Intérprete portable: primero el .venv creado por instalar_windows.bat;
+rem si no existe, se usa el python del PATH (modo legacy / desarrollo).
+rem Nunca se usa una ruta absoluta de una PC concreta.
+set "PY=%~dp0..\.venv\Scripts\python.exe"
 if not exist "%PY%" set "PY=python.exe"
 
 if not exist logs_ciberseguridad mkdir logs_ciberseguridad

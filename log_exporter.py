@@ -23,10 +23,12 @@ def _get_logs_folder():
     if env_folder:
         return os.path.expandvars(env_folder)
     
-    try:
+    # D: es el destino historico del servidor UNIPAZ. Solo se usa si la
+    # unidad existe: en otra PC se evita crear un directorio literal llamado
+    # "D:\logs_ciberseguridad". El kit portable fija LOG_FOLDER en .env.
+    if os.path.isdir("D:\\"):
         return r"D:\logs_ciberseguridad"
-    except Exception:
-        return os.path.join(BASE_DIR, 'logs_ciberseguridad')
+    return os.path.join(BASE_DIR, 'logs_ciberseguridad')
 
 # Intentar crear la carpeta de logs, si no es posible, usar la carpeta local
 try:
