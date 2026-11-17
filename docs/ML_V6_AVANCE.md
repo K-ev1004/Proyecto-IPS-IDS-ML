@@ -1,7 +1,7 @@
 # ML v6 — Avance completo (M0 → M6) y estado del sistema
 
-**Fecha:** 2026-11-11 · **Rama:** `ml-v6` (laboratorio) · **Producción:** `main` intacta
-**Resumen ejecutable:** el ML volvió a ser detector con evidencia medida en cada paso. Hoy corre en **fase sombra con reingreso por clase iniciado**, con GUI visible, a prueba de apagones, y con política de bloqueo configurable desde la propia GUI.
+**Fecha:** 2026-11-11 · **Actualizado:** 2026-11-17 · **Rama:** `ml-v6` (laboratorio) · **Producción:** `main` intacta
+**Resumen ejecutable:** el ML volvió a ser detector con evidencia medida en cada paso. El laboratorio queda **configurado para arrancar solo con el canal v6 activo** (6 clases fuera de sombra, bloqueo OFF y medición pasiva conservada en `ml_candidatos`), con GUI visible, a prueba de apagones y con política de bloqueo configurable desde la propia GUI. **Producción (`main`) sigue en v5 y no se ha tocado.**
 
 ---
 
@@ -44,10 +44,12 @@
 - **Puerta CUMPLIDA** (`M5_informe_sombra.md`): FP reales **0/día** (0 de 2.516 candidatos); los 2 únicos 'alerta' fueron **verdaderos con doble firma** (ML + heurística del mismo origen, ±9 s: SYN externo a puertos 21/22).
 - Grabber de HTTP benigno: construido, medido y **descartado** (UNIPAZ es 99,998 % no-HTTP-plano, riesgo R6); el código queda versionado con sus tests por si la red cambia. Fuente de payload: solo CSIC.
 
-### M6 — Reingreso por clase (iniciado)
+### M6 — Reingreso por clase → reingreso total en laboratorio
 - Mecanismo: salida de sombra **por clase** vía override en `config/politica_bloqueo.json` (el override es el pase de reingreso, auditable en git).
 - **Primera clase activada: Inyeccion_SQL** (la más precisa: 0,9977; 0 FP en sombra; casi no se dispara por R6 = riesgo mínimo): ML solo → alertar 1 h; doble firma → bloquear 24 h.
-- Fila de reingreso: `Posible_Exploit` (2.514 candidatos, 2 verdaderos) → luego las volumétricas. Revisión semanal: FP < 5 %; si una clase falla, se quita su override y vuelve a sombra.
+- **Laboratorio (2026-11-17): las 6 clases activas de golpe** mediante `IDS_ML_V6=1` + `IDS_ML_SOMBRA=0` en `scripts\lanzar_v6_lab.bat`. Con sombra 0, `politica_bloqueo.decidir()` usa los defaults activos (`ml → alertar 60 min`, doble firma → `bloquear 1440 min`, heurística → `alertar 1440 min`) sin editar el JSON.
+- La **medición pasiva no se pierde**: `_registrar_candidato_v6()` se ejecuta antes de los filtros de sombra/decisión, así que toda predicción sigue en `ml_candidatos` con clase, confianza, umbral, arbitraje, features y `decision`. Al activar una clase solo cambia `descartado → alerta`; los descartados siguen contando para la revisión FP < 5 %.
+- Freno global intacto: toggle **"Modo SOMBRA"** en la GUI, `IDS_POLITICA=sombra` o quitar overrides del JSON. Revisión semanal FP < 5 % por clase (antes `Posible_Exploit`, luego volumétricas) aunque el laboratorio ya corra activo.
 
 ### GUI — Configuración de la v6
 - **Botón de bloqueo de valores calibrados** (default BLOQUEADO, persistido): los 9 umbrales calibrados deshabilitados con su evidencia en tooltips; desbloquear exige doble confirmación y queda en el log.
@@ -56,17 +58,17 @@
 
 ---
 
-## 2. ⚠️ PENDIENTE PRIORITARIO: arreglar lo responsive de la GUI
+## 2. ✅ RESUELTO: responsive de la GUI de Configuración
 
-**Al agregar las secciones nuevas se DAÑÓ el responsive de la página de Configuración.** La página es un `QVBoxLayout` fijo sin scroll: con el botón de bloqueo + la sección ML v6 (6 filas de matriz con 5 widgets c/u + labels + botones), el contenido **ya no cabe** y las secciones de abajo ("Acciones Globales", parte de la matriz) quedan cortadas o comprimidas según la resolución. Además se eliminó un `addStretch()` intermedio que absorbía el espacio sobrante.
+El desbordamiento documentado quedó corregido en el commit `c3546d5`:
 
-**Arreglo pendiente (próxima sesión de GUI):**
-1. Envolver el contenido de `page_settings` en un `ScrollArea` (qfluentwidgets) con ancho fijo interno — la página completa debe hacer scroll vertical.
-2. Reorganizar la matriz por clase a una cuadrícula compacta (2 columnas de 3 clases, o una tabla) para que no ocurra desbordamiento horizontal en pantallas pequeñas.
-3. Revisar los `addStretch()` y márgenes para que "Acciones Globales" vuelva a su lugar.
-4. Repetir la prueba de arranque en la resolución problemática del servidor.
+1. `page_settings` envuelto en `ScrollArea` (qfluentwidgets con fallback Qt) → scroll vertical completo.
+2. Contenido reorganizado en **5 cards**, con "Acciones Globales" al inicio y botones en `FlowLayout`.
+3. Umbrales en grids 2x2; matriz M6 como `QGridLayout` de 5 columnas con cabecera, sin desbordamiento horizontal.
+4. SpinBox de duración ampliado a **150 px** (con 95 px el `lineEdit` quedaba en 3 px y el valor no se veía); `10080` mide 40 px.
+5. Ancho mínimo del contenedor **984 → 726 px**; tooltips en acciones y celdas.
 
-*Mientras tanto: la ventana maximizada (o en pantalla grande) muestra todo; el problema es de acomodo, no de funcionalidad — la política y los contadores funcionan.*
+Verificación: `python -m py_compile interfasc.py` OK, 14 checks funcionales PASS. La batería de 60 tests no se ejecutó aquí (`pytest` no está instalado en este intérprete).
 
 ---
 
@@ -84,7 +86,7 @@ paquete (SPAN) ──► procesar_paquete (ids.py)
                      sombra: todo → ml_candidatos (nada notifica salvo clase reingresada)
 ```
 
-**Operación actual:** `IDS_ML_V6=1` + sombra + Inyeccion_SQL reingresada; heurísticas alertando; bloqueo OFF en laboratorio.
+**Operación actual (laboratorio, configurado pero NO lanzado en esta sesión):** `IDS_ML_V6=1` + `IDS_ML_SOMBRA=0` + `IDS_RUN_ID=lab-v6-activo` + bloqueo OFF; heurísticas alertando; ML v5 en instrumentación (`IDS_ML_ALERTAS=0`). El arranque automático al iniciar sesión lo registra la tarea **`IDS-Lab-V6-Activo`** a través de `scripts\instalar_tarea_v6_lab.bat` (requiere ejecutarse como Administrador). `[ONLOGON]` y no `[ONSTART]` porque la GUI es el motor y necesita sesión interactiva; si la sesión entra sola al encender el PC, equivale a arranque automático.
 
 ---
 
@@ -108,18 +110,26 @@ paquete (SPAN) ──► procesar_paquete (ids.py)
 | `c5adbc1` | M5 LANZADA (tarea al iniciar sesión) |
 | `da5c51a` | M6 INICIADA (M5 cerrado + Inyeccion_SQL activa) |
 | `94d6d07` | GUI: bloqueo calibrados + sección ML v6 |
-| *(este)* | Avance M0→M6 documentado + pendiente responsive GUI |
+| `c3546d5` | GUI: configuracion responsive con scroll y matriz v6 compacta (termina el pendiente) |
+| *(este)* | Arranque automático del laboratorio con v6 activo + documentación |
 
 ## 5. Comandos de operación rápida
 
 ```powershell
-# Estado de la fase sombra
-schtasks /query /tn "IDS-Lab-M5-V6"
-Get-Content logs_ciberseguridad\gui_v6_m5.log -Tail 20
+# Estado del arranque automático (requiere haber ejecutado el instalador como Admin)
+schtasks /query /tn "IDS-Lab-V6-Activo" /fo LIST /v
 
-# Candidatos por clase/decisión (revisión semanal M6)
-venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE ts_utc > '2026-11-11' GROUP BY 1,2\")]"
+# Log del run activo (el lanzador NO se ejecutó al preparar esto)
+Get-Content logs_ciberseguridad\gui_lab-v6-activo.log -Tail 20
+# Debe aparecer: [OK] Modelos v6 cargados (sombra=NO): CatBoost v6 (7 umbrales por clase) + detector de payload
 
-# Reingresar/quitar una clase: editar config/politica_bloqueo.json (por_clase)
+# Candidatos por clase/decisión — la medición pasiva se conserva con clases activas
+python -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE run_id='lab-v6-activo' GROUP BY 1,2\")]"
+
+# Instalar / desinstalar el arranque automático
+scripts\instalar_tarea_v6_lab.bat        # clic derecho -> Ejecutar como administrador
+schtasks /delete /tn "IDS-Lab-V6-Activo" /f
+
+# Freno inmediato sin tocar código: toggle "Modo SOMBRA" en la GUI o IDS_POLITICA=sombra
 # Rollback total a producción v5: IDS_POLITICA=heuristica (o cerrar y usar main)
 ```
