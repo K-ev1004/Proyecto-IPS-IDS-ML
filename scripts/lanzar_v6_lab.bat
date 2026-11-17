@@ -1,9 +1,10 @@
 @echo off
 rem ============================================================================
-rem lanzar_v6_lab.bat - LABORATORIO (NO produccion): motor v6 activo.
+rem lanzar_v6_lab.bat - LABORATORIO v6 (run aislado), NO el lanzador de produccion.
 rem
 rem Lo llama la tarea programada "IDS-Lab-V6-Activo" al iniciar sesion.
-rem NO es produccion: produccion sigue en v5 con IDS-Observacion-C3.
+rem Para produccion v6 dentro de ml-v6 use scripts\lanzar_v6_produccion.bat;
+rem main se conserva como linea base v5.
 rem
 rem Diferencias contra el lanzador de produccion (lanzar_gui.bat):
 rem   - IDS_ML_V6=1      -> carga CatBoost v6 + detector de payload

@@ -97,7 +97,7 @@ El instalador hace, en este orden:
 | 5 | Bajar modelos | `git lfs install --local` + `git lfs pull` si hay `.git` |
 | 6 | Detectar Npcap | Aviso con enlace si falta; **no lo instala** |
 | 7 | Preparar carpetas | `logs_ciberseguridad/`, `backups/` y `.env` desde la plantilla |
-| 8 | Registrar tarea | `IDS-Lab-V6-Activo`, disparador `ONLOGON`, con `schtasks /f` (idempotente) |
+| 8 | Registrar tarea | `IDS-Prod-V6-Activo`, disparador `ONLOGON`, con `schtasks /f` (idempotente) |
 | 9 | Verificar | Llama a `scripts\verificar_windows.bat` |
 
 Al terminar, **no se ha lanzado nada**.
@@ -115,15 +115,16 @@ Si el instalador mostró el aviso de Npcap:
 ### Paso 4 — Cerrar sesión y volver a iniciarla
 
 No hace falta reiniciar el PC: con cerrar sesión y entrar de nuevo, la tarea
-`ONLOGON` dispara `scripts\lanzar_v6_lab.bat`.
+`ONLOGON` dispara `scripts\lanzar_v6_produccion.bat` (producción v6 en `ml-v6`).
 
 Si se quiere forzar manualmente **sin** registrar la tarea:
 
 ```powershell
-scripts\lanzar_v6_lab.bat
+scripts\lanzar_v6_produccion.bat
 ```
 
 Esa ventana es el motor: **no cerrarla** (minimizar sí es seguro).
+`main` permanece como línea base v5 y no recibe este lanzador.
 
 ### Paso 5 — Verificar que arrancó con v6 activo
 
@@ -132,7 +133,7 @@ Esa ventana es el motor: **no cerrarla** (minimizar sí es seguro).
 scripts\verificar_windows.bat
 
 # Log del run
-Get-Content logs_ciberseguridad\gui_lab-v6-activo.log -Tail 20
+Get-Content logs_ciberseguridad\gui_prod-v6-activo.log -Tail 20
 ```
 
 La línea esperada en el log es:
@@ -144,33 +145,54 @@ La línea esperada en el log es:
 Comprobación adicional de arranque automático:
 
 ```powershell
-schtasks /query /tn "IDS-Lab-V6-Activo" /fo LIST /v
+schtasks /query /tn "IDS-Prod-V6-Activo" /fo LIST /v
 ```
 
 Debe mostrar `Estado: Listo` y `Iniciar: Al iniciar sesión`.
 
 ### Paso 6 — Confirmar la medición pasiva
 
-Con el laboratorio activo, toda predicción se guarda en `ml_candidatos`
+Con las clases activas, toda predicción se guarda en `ml_candidatos`
 (incluso las descartadas), así que la medición no se pierde:
 
 ```powershell
-.venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE run_id='lab-v6-activo' GROUP BY 1,2\")]"
+.venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE run_id='prod-v6-activo' GROUP BY 1,2\")]"
+```
+
+### Paso 7 — Repetir las pruebas T sobre v6
+
+```powershell
+scripts\ejecutar_t_v6.bat
+```
+
+Hace el preflight y corre T1v6, T2v6 (=T6) , T3v6 y T4v6. **No lanza el sensor
+y no regenera el dataset v6**: el CSV debe estar ya en
+`Dataset_Limpio\dataset_global_unipaz_v6.csv`. El informe nuevo es
+`informe_test_masivo_v6.json`; el histórico `informe_test_masivo.json` no se toca.
+
+T5v6 se ejecuta aparte con las 3 CHR encendidas:
+
+```powershell
+setx MIKROTIK_PROFILE lab
+setx IDS_IPS_AUTONOMO 1
+.venv\Scripts\python.exe docs\lab\t5_routeros_v6.py --evidencia-dir docs\lab\corridas\v6
 ```
 
 ---
 
 ## 5. Configuración (`.env`)
 
-El lanzador lee `.env` de la raíz **antes** de fijar los flags del laboratorio.
+El lanzador lee `.env` de la raíz **antes** de fijar los flags de producción.
 Formato: una línea `CLAVE=VALOR`, sin `export`, sin comillas y sin espacios
-alrededor de `=`. Las líneas que empiezan con `#` se ignoran.
+alrededor de `=`. Las líneas que empiezan con `#` se ignoran. Los flags del
+lanzador tienen prioridad sobre `.env`.
 
 Flags que el lanzador fija siempre (no se pueden cambiar desde `.env`):
 
 ```
 IDS_ML_V6=1          IDS_ML_SOMBRA=0      IDS_ML_ALERTAS=0
-IDS_IPS_AUTONOMO=0   IDS_RUN_ID=lab-v6-activo
+IDS_IPS_AUTONOMO=0   IDS_RUN_ID=prod-v6-activo
+IDS_MODO_OBSERVACION=0
 ```
 
 Variables útiles que sí se leen de `.env`:
@@ -199,24 +221,24 @@ verifica. No lanza el motor.
 Si se mueve la carpeta después de instalar, la tarea apuntará a la ruta vieja.
 Solución: volver a ejecutar `scripts\instalar_windows.bat` como Administrador
 (el `schtasks /f` sobrescribe la tarea) o directamente
-`scripts\instalar_tarea_v6_lab.bat`.
+`scripts\instalar_tarea_v6_produccion.bat`.
 
 ### Desinstalar
 
 ```powershell
-schtasks /delete /tn "IDS-Lab-V6-Activo" /f
+schtasks /delete /tn "IDS-Prod-V6-Activo" /f
 rmdir /s /q .venv
 del .env
 ```
 
-Quedan intactos: código, modelos, BD y logs. Para borrar el estado del
-laboratorio, eliminar `intrusiones_v5.db` y `logs_ciberseguridad\`.
+Quedan intactos: código, modelos, BD y logs. Para borrar el estado del run v6,
+eliminar `intrusiones_v5.db` y `logs_ciberseguridad\`.
 
 ### Freno de emergencia sin tocar código
 
 - Toggle **"Modo SOMBRA"** en la GUI (efecto inmediato).
 - Variable de entorno `IDS_POLITICA=sombra`.
-- `schtasks /end /tn "IDS-Lab-V6-Activo"` detiene el proceso actual sin borrar la tarea.
+- `schtasks /end /tn "IDS-Prod-V6-Activo"` detiene el proceso actual sin borrar la tarea.
 
 ---
 
@@ -230,7 +252,7 @@ laboratorio, eliminar `intrusiones_v5.db` y `logs_ciberseguridad\`.
 | `pip install` falla | Sin internet o proxy | Repetir; si hay proxy, configurar `PIP_INDEX_URL` |
 | No se captura tráfico | Npcap ausente o interfaz incorrecta | `sc query npcap`; fijar `IDS_IFACE` en `.env` con el nombre exacto |
 | `ImportError: qfluentwidgets` | Dependencia incompleta | `.\.venv\Scripts\python.exe -m pip install PyQt-Fluent-Widgets` |
-| Se abre la GUI pero no arranca la captura | `IDS_AUTO_INICIAR` no llegó al proceso | Revisar `.env` y usar `scripts\lanzar_v6_lab.bat` |
+| Se abre la GUI pero no arranca la captura | `IDS_AUTO_INICIAR` no llegó al proceso | Revisar `.env` y usar `scripts\lanzar_v6_produccion.bat` |
 | La tarea apunta a una ruta que ya no existe | Carpeta movida tras instalar | Reejecutar el instalador (§6) |
 
 ### Cómo detectar un puntero LFS a ojo

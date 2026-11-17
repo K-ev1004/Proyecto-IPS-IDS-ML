@@ -9,7 +9,7 @@ rem *** EJECUTAR COMO ADMINISTRADOR *** (necesario para registrar la tarea).
 rem
 rem Hace: crear .venv, instalar dependencias pinnadas, bajar modelos con Git
 rem LFS (si hay repo), detectar Npcap (SOLO avisar), crear carpetas, copiar
-rem .env.example a .env, registrar la tarea IDS-Lab-V6-Activo y verificar.
+rem .env.example a .env, registrar la tarea IDS-Prod-V6-Activo y verificar.
 rem
 rem NO lanza el motor. El arranque ocurre en el PROXIMO inicio de sesion.
 rem NO instala Npcap automaticamente (es un driver y requiere licencia OEM
@@ -123,8 +123,8 @@ if not exist .env (
 )
 
 echo.
-echo [7/7] Registrando arranque automatico (IDS-Lab-V6-Activo)...
-call "%~dp0instalar_tarea_v6_lab.bat" /NOPAUSE
+echo [7/7] Registrando arranque automatico (IDS-Prod-V6-Activo)...
+call "%~dp0instalar_tarea_v6_produccion.bat" /NOPAUSE
 
 echo.
 echo Verificando el entorno instalado...
@@ -135,13 +135,13 @@ echo ===========================================================================
 echo  INSTALACION TERMINADA
 echo  - .venv con dependencias pinnadas
 echo  - modelos v5 + v6 verificados
-echo  - tarea IDS-Lab-V6-Activo registrada (ONLOGON)
+echo  - tarea IDS-Prod-V6-Activo registrada (ONLOGON)
 echo  - el motor NO se ha lanzado
 echo.
 echo  Proximos pasos:
 echo   1. Si aparecio el aviso de Npcap, instalarlo desde https://npcap.com/
 echo   2. Cerrar sesion y volver a iniciarla
-echo   3. Revisar: logs_ciberseguridad\gui_lab-v6-activo.log
+echo   3. Revisar: logs_ciberseguridad\gui_prod-v6-activo.log
 echo      Debe aparecer "[OK] Modelos v6 cargados (sombra=NO)"
 echo ============================================================================
 pause

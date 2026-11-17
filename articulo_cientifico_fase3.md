@@ -40,6 +40,8 @@ La evaluación del sistema se planteó mediante una batería de pruebas masivas 
 
 **Prueba T4** verificó la funcionalidad del exportador de logs (`log_exporter.py`), confirmando la escritura exitosa de líneas de bloqueo en el archivo `logs_bloqueos.log` y la generación de archivos .log semanales en el directorio configurado.
 
+> **Nota de extensión v6 (rama `ml-v6`).** Las pruebas T1–T4 descritas arriba son evidencia del modelo **v5** y sus resultados permanecen intactos en `informe_test_masivo.json`; la T5 histórica sobre RouterOS CHR se conserva en `docs/lab/informe_t5.json`. La extensión con el modelo **v6** (CatBoost de 33 features con umbrales por clase y detector de SQLi por payload) se reporta en archivos **separados**, sin sobrescribir los anteriores: la batería `test_masivo_v6.py` produce `informe_test_masivo_v6.json` (T1v6, T2v6 = T6, T3v6 y T4v6) y `docs/lab/t5_routeros_v6.py` produce `docs/lab/corridas/v6/informe_t5_v6.json`. En el momento de esta entrega la batería v6 está **preparada pero no ejecutada**: el dataset `dataset_global_unipaz_v6.csv` debe estar ya generado y las tres CHR deben estar disponibles; no se regenera ni se restaura ninguno de esos artefactos. La matriz completa de pruebas, modelos, datasets, banderas e informes se documenta en [`docs/tesis/matriz_evidencias_v6.md`](./docs/tesis/matriz_evidencias_v6.md).
+
 Además de las métricas cuantitativas, la evaluación cualitativa se fundamenta en verificaciones de funcionamiento: el sistema demostró capacidad de detección mediante la correcta identificación de las 7 clases de ataque en la interfaz gráfica; capacidad de prevención a través de la integración con MikroTik (bloqueo vía SSH en modo autónomo o alerta en modo semi-autónomo; ids.py:493–500); generación de alertas verificable por la emisión de señales PyQt y mensajes Telegram; registro de incidentes confirmado por persistencia en SQLite y archivos .log; y geolocalización operativa mediante consultas a ip-api.com y clasificación por subred UNIPAZ. No se encontraron datos de tiempo de detección (latencia de extremo a extremo desde captura de paquete hasta acción de bloqueo) registrados explícitamente en el proyecto.
 
 ---
@@ -70,7 +72,7 @@ Las funcionalidades implementadas y verificadas en el código fuente son las sig
 
 #### Resultados cuantitativos
 
-Los datos presentados provienen exclusivamente de la batería de pruebas `test_masivo.py` y su informe asociado `informe_test_masivo.json`. Las métricas que carecen de datos suficientes en el proyecto se indican como tales.
+Los datos cuantitativos de esta sección provienen de la batería histórica de pruebas `test_masivo.py` y su informe asociado `informe_test_masivo.json` (modelo v5); la extensión v6 se reporta por separado, como se indicó en la nota anterior. Las métricas que carecen de datos suficientes en el proyecto se indican como tales.
 
 | Métrica | Resultado | Interpretación |
 |---|---:|---|
@@ -87,7 +89,7 @@ Los datos presentados provienen exclusivamente de la batería de pruebas `test_m
 | Tiempo de predicción ML (v5, lote) | 1.13 s | Tiempo para predecir 150 000 flujos |
 | Tiempo de predicción SQLiGuard (D2) | 0.02 s | Tiempo para predecir 57 229 flujos |
 | Tiempo de cadena completa (T3) | ~38 s | Tiempo para procesar 6 000 flujos end-to-end |
-| Ataques bloqueados correctamente | — | Sin datos verificables de conteo de bloqueos exitosos en el proyecto |
+| Ataques bloqueados correctamente | — | Sin conteo agregado en la batería T1–T4; la verificación puntual contra equipo real corresponde a T5 (9/9 sobre CHR, `docs/lab/informe_t5.json`) |
 | Tiempo de respuesta (detección→bloqueo) | — | Sin datos registrados de latencia de extremo a extremo |
 
 **Métricas por clase del modelo v5 multiclase** (150 000 flujos de test):

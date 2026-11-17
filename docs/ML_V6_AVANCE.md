@@ -1,7 +1,7 @@
 # ML v6 — Avance completo (M0 → M6) y estado del sistema
 
-**Fecha:** 2026-11-11 · **Actualizado:** 2026-11-17 · **Rama:** `ml-v6` (laboratorio) · **Producción:** `main` intacta
-**Resumen ejecutable:** el ML volvió a ser detector con evidencia medida en cada paso. El laboratorio queda **configurado para arrancar solo con el canal v6 activo** (6 clases fuera de sombra, bloqueo OFF y medición pasiva conservada en `ml_candidatos`), con GUI visible, a prueba de apagones y con política de bloqueo configurable desde la propia GUI. **Producción (`main`) sigue en v5 y no se ha tocado.**
+**Fecha:** 2026-11-11 · **Actualizado:** 2026-11-17 · **Rama operativa:** `ml-v6` · **Producción v6:** lanzador propio en `ml-v6`; `main` queda como línea base v5
+**Resumen ejecutable:** el ML volvió a ser detector con evidencia medida en cada paso. El proyecto queda **funcional con el ML v6 activo en producción dentro de `ml-v6`** (6 clases fuera de sombra, bloqueo MikroTik OFF y medición pasiva conservada en `ml_candidatos`), con GUI visible, arranque `ONLOGON` y política configurable desde la propia GUI. `main` no se ha tocado: sigue siendo la línea base v5. Las T históricas se preservan y se añade la batería `T*v6` con informe separado.
 
 ---
 
@@ -86,7 +86,9 @@ paquete (SPAN) ──► procesar_paquete (ids.py)
                      sombra: todo → ml_candidatos (nada notifica salvo clase reingresada)
 ```
 
-**Operación actual (laboratorio, configurado pero NO lanzado en esta sesión):** `IDS_ML_V6=1` + `IDS_ML_SOMBRA=0` + `IDS_RUN_ID=lab-v6-activo` + bloqueo OFF; heurísticas alertando; ML v5 en instrumentación (`IDS_ML_ALERTAS=0`). El arranque automático al iniciar sesión lo registra la tarea **`IDS-Lab-V6-Activo`** a través de `scripts\instalar_tarea_v6_lab.bat` (requiere ejecutarse como Administrador). `[ONLOGON]` y no `[ONSTART]` porque la GUI es el motor y necesita sesión interactiva; si la sesión entra sola al encender el PC, equivale a arranque automático.
+**Operación actual (producción v6 en `ml-v6`, configurada pero NO lanzada en esta sesión):** `IDS_ML_V6=1` + `IDS_ML_SOMBRA=0` + `IDS_ML_ALERTAS=0` + `IDS_IPS_AUTONOMO=0` + `IDS_RUN_ID=prod-v6-activo`; heurísticas alertando, v5 en instrumentación y canal v6 activo. El arranque automático lo registra la tarea **`IDS-Prod-V6-Activo`** mediante `scripts\instalar_tarea_v6_produccion.bat` (requiere Administrador); el instalador completo `scripts\instalar_windows.bat` ya la usa por defecto. `[ONLOGON]` y no `[ONSTART]` porque la GUI es el motor y necesita sesión interactiva. El lanzador anterior de laboratorio (`IDS-Lab-V6-Activo`) se conserva para corridas aisladas. **`main` sigue en v5 y no recibe este lanzador.**
+
+**Evidencias T*v6 (preparadas, no ejecutadas):** `test_masivo_v6.py` + `scripts\ejecutar_t_v6.bat` generan `informe_test_masivo_v6.json` sin tocar `informe_test_masivo.json`. El dataset v6 NO se regenera: debe estar ya en `Dataset_Limpio\`. T5v6 está preparada en `docs\lab\t5_routeros_v6.py` y se ejecutará cuando las 3 CHR estén disponibles; su evidencia irá a `docs\lab\corridas\v6\informe_t5_v6.json`.
 
 ---
 
@@ -113,31 +115,55 @@ paquete (SPAN) ──► procesar_paquete (ids.py)
 | `c3546d5` | GUI: configuracion responsive con scroll y matriz v6 compacta (termina el pendiente) |
 | `3d8b575` | Arranque automático del laboratorio con v6 activo + documentación |
 | *(este)* | Kit portable Windows (instalador/actualizador/verificador + `.venv` relativo) y paso a paso en el README |
+| *(este)* | Producción v6 en `ml-v6`: lanzador/tarea propios, batería `T*v6` con informe separado y matriz de evidencias |
 
 ## 5. Comandos de operación rápida
 
 ```powershell
+# --- Producción v6 en ml-v6 -------------------------------------------------
+scripts\lanzar_v6_produccion.bat   # abre la GUI con v6 activo; no lanza desde este paso
+
 # Estado del arranque automático (requiere haber ejecutado el instalador como Admin)
-schtasks /query /tn "IDS-Lab-V6-Activo" /fo LIST /v
+schtasks /query /tn "IDS-Prod-V6-Activo" /fo LIST /v
 
 # Log del run activo (el lanzador NO se ejecutó al preparar esto)
-Get-Content logs_ciberseguridad\gui_lab-v6-activo.log -Tail 20
+Get-Content logs_ciberseguridad\gui_prod-v6-activo.log -Tail 20
 # Debe aparecer: [OK] Modelos v6 cargados (sombra=NO): CatBoost v6 (7 umbrales por clase) + detector de payload
 
 # Candidatos por clase/decisión — la medición pasiva se conserva con clases activas
-python -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE run_id='lab-v6-activo' GROUP BY 1,2\")]"
+python -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE run_id='prod-v6-activo' GROUP BY 1,2\")]"
 
-# Instalar / desinstalar el arranque automático
-scripts\instalar_tarea_v6_lab.bat        # clic derecho -> Ejecutar como administrador
-schtasks /delete /tn "IDS-Lab-V6-Activo" /f
+# Instalar / desinstalar el arranque automático de producción v6
+scripts\instalar_tarea_v6_produccion.bat   # clic derecho -> Ejecutar como administrador
+schtasks /delete /tn "IDS-Prod-V6-Activo" /f
 
+# --- Batería T*v6 (no lanza el sensor, no toca el dataset v6) ---------------
+scripts\ejecutar_t_v6.bat
+# Preflight + T1v6 / T2v6(=T6) / T3v6 / T4v6 -> informe_test_masivo_v6.json
+# El histórico informe_test_masivo.json queda intacto.
+
+# T5v6 SOLO cuando las 3 CHR estén disponibles:
+setx MIKROTIK_PROFILE lab
+setx IDS_IPS_AUTONOMO 1
+.venv\Scripts\python.exe docs\lab\t5_routeros_v6.py --evidencia-dir docs\lab\corridas\v6
+# -> docs\lab\corridas\v6\informe_t5_v6.json
+
+# --- Laboratorio aislado (run separado, NO es el lanzador de producción) ----
+scripts\lanzar_v6_lab.bat
+schtasks /query /tn "IDS-Lab-V6-Activo" /fo LIST /v
+
+# --- Frenos y rollback ------------------------------------------------------
 # Freno inmediato sin tocar código: toggle "Modo SOMBRA" en la GUI o IDS_POLITICA=sombra
 # Rollback total a producción v5: IDS_POLITICA=heuristica (o cerrar y usar main)
 
-# Kit portable Windows (no lanza el motor)
+# --- Kit portable Windows (no lanza el motor) -------------------------------
 scripts\instalar_windows.bat     # clic derecho -> Ejecutar como administrador
 scripts\actualizar_windows.bat   # git pull + lfs pull + dependencias
 scripts\verificar_windows.bat    # salud: imports, modelos, Npcap, tarea, log
 ```
 
-La portabilidad del laboratorio se documenta en [docs/PORTABILIDAD.md](./PORTABILIDAD.md).
+La portabilidad de la producción v6 se documenta en
+[docs/PORTABILIDAD.md](./PORTABILIDAD.md), la repetición T5v6 en
+[docs/lab/README.md](./lab/README.md) y la trazabilidad completa de pruebas,
+modelos, datasets y banderas en
+[docs/tesis/matriz_evidencias_v6.md](./tesis/matriz_evidencias_v6.md).

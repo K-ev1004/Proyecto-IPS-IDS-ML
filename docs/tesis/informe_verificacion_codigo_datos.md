@@ -72,7 +72,7 @@ Verificado en código, BD y dataset de la Fase II:
 | **T3** | D2 balanceado (3,000 benignos + 3,000 SQLi) por la **cadena completa** `on_flow_ready`, BD temporal, sin alertas ni bloqueo | Cuántos ataques SQL quedan realmente registrados como `Inyeccion_SQL` con trazabilidad. **P0:** corregido el bug de esquema (persistía 0 por tabla sin columnas); ahora **2,343/3,000** |
 | **T4** | Sin dataset; IP de documentación | El exportador de logs escribe y verifica la línea de bloqueo con integridad |
 
-**Limitaciones de diseño (verificadas):** ninguna prueba usa captura en vivo por Npcap; T3 alimenta la cadena desde CSV; ninguna verifica el bloqueo real en el MikroTik.
+**Limitaciones de diseño (verificadas):** ninguna de las pruebas T1–T4 usa captura en vivo por Npcap; T3 alimenta la cadena desde CSV; **T1–T4 no verifican el bloqueo real en el MikroTik**. Esa verificación sí quedó cubierta fuera de la batería por **T5** (laboratorio con tres CHR, 9/9, §P2), con readback y corte de conectividad confirmados. La repetición sobre ML v6, **T5v6**, queda preparada y pendiente de que las tres CHR estén disponibles (ver [matriz de evidencias v6](./matriz_evidencias_v6.md)).
 
 ---
 
@@ -176,7 +176,7 @@ Generada sobre los 57,229 flujos externos (D2/Zenodo) por la **ruta de producci�
 
 ### Registros operativos
 - 2,553 bloqueos registrados en BD; 4 líneas en el log de bloqueos (pruebas LAN y test masivo con IP de documentación).
-- **No existe ninguna corrida con bloqueo confirmado en equipo real.**
+- **Históricamente no existía ninguna corrida con bloqueo confirmado en equipo real**; esa limitación quedó superada en P2 con T5 (9/9 sobre RouterOS CHR, readback `CONFIRMADO`, corte real en `forward` y restauración; evidencia en `docs/lab/informe_t5.json`). T5v6 está preparada pero aún no ejecutada sobre el motor v6.
 - **P0 aplicado:** la tabla `bloqueos` ahora guarda `comando`, `respuesta` y `confirmado`, y el estado distingue `CONFIRMADO` (readback real en el MikroTik), `SIMULADO` (mock/omisión) y `ERROR`. El mock ya no registra `ACTIVO`.
 
 ---

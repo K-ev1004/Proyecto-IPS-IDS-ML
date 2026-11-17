@@ -98,14 +98,18 @@ redistribuir sin licencia OEM, por eso el kit solo lo detecta y avisa.
 ### Paso 4 — Cerrar sesión y volver a entrar
 
 No hace falta reiniciar. Al iniciar sesión, la tarea `ONLOGON` ejecuta
-`scripts\lanzar_v6_lab.bat` y abre la GUI. **No cierres esa ventana**: es el
-motor (minimizar sí es seguro).
+`scripts\lanzar_v6_produccion.bat` y abre la GUI con el **ML v6 activo**.
+**No cierres esa ventana**: es el motor (minimizar sí es seguro).
 
 Para lanzarlo manualmente sin esperar al inicio de sesión:
 
 ```powershell
-scripts\lanzar_v6_lab.bat
+scripts\lanzar_v6_produccion.bat
 ```
+
+> `main` se conserva como línea base v5. La producción v6 vive en la rama
+> `ml-v6` y se lanza desde ahí; para volver al motor anterior, cierra la GUI
+> y ejecuta `scripts\lanzar_gui.bat` desde `main`.
 
 ### Paso 5 — Verificar que arrancó con el v6 activo
 
@@ -114,13 +118,13 @@ scripts\lanzar_v6_lab.bat
 scripts\verificar_windows.bat
 
 # Estado de la tarea
-schtasks /query /tn "IDS-Lab-V6-Activo" /fo LIST /v
+schtasks /query /tn "IDS-Prod-V6-Activo" /fo LIST /v
 
 # Log del run
-Get-Content logs_ciberseguridad\gui_lab-v6-activo.log -Tail 20
+Get-Content logs_ciberseguridad\gui_prod-v6-activo.log -Tail 20
 ```
 
-La línea que confirma el laboratorio es:
+La línea que confirma la producción v6 es:
 
 ```text
 [OK] Modelos v6 cargados (sombra=NO): CatBoost v6 (7 umbrales por clase) + detector de payload
@@ -134,7 +138,27 @@ LFS: ejecuta `git lfs install --local` y `git lfs pull`.
 Con las clases activas, toda predicción sigue guardándose en `ml_candidatos`:
 
 ```powershell
-.venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE run_id='lab-v6-activo' GROUP BY 1,2\")]"
+.venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('intrusiones_v5.db'); [print(r) for r in c.execute(\"SELECT clase_predicha, decision, COUNT(*) FROM ml_candidatos WHERE run_id='prod-v6-activo' GROUP BY 1,2\")]"
+```
+
+### Paso 7 — Repetir las pruebas T sobre v6
+
+```powershell
+# Preflight + T1v6, T2v6(=T6), T3v6 y T4v6. No lanza el sensor ni toca el dataset.
+scripts\ejecutar_t_v6.bat
+```
+
+El dataset v6 **debe estar ya generado** en
+`Dataset_Limpio\dataset_global_unipaz_v6.csv`; el script no lo restaura ni lo
+regenera. Los resultados se escriben en `informe_test_masivo_v6.json` y los
+históricos v5 quedan intactos en `informe_test_masivo.json`.
+
+T5v6 se ejecuta aparte, solo cuando las 3 CHR estén disponibles:
+
+```powershell
+setx MIKROTIK_PROFILE lab
+setx IDS_IPS_AUTONOMO 1
+.venv\Scripts\python.exe docs\lab\t5_routeros_v6.py --evidencia-dir docs\lab\corridas\v6
 ```
 
 ### Actualizar / desinstalar
@@ -144,7 +168,7 @@ Con las clases activas, toda predicción sigue guardándose en `ml_candidatos`:
 scripts\actualizar_windows.bat
 
 # Desinstalar el arranque automático
-schtasks /delete /tn "IDS-Lab-V6-Activo" /f
+schtasks /delete /tn "IDS-Prod-V6-Activo" /f
 rmdir /s /q .venv
 ```
 
@@ -172,19 +196,18 @@ sc query npcap
 
 ## ⚙️ Configuración (variables de entorno)
 
-| Variable | Uso | Obligatoria |
-|---|---|---|
-El lanzador `scripts\lanzar_v6_lab.bat` carga `.env` de la raíz antes de arrancar
-(plantilla: [`.env.example`](./.env.example)). Formato: `CLAVE=VALOR`, sin comillas
-y sin `export`. Las líneas que empiezan con `#` se ignoran.
+El lanzador `scripts\lanzar_v6_produccion.bat` carga `.env` de la raíz antes de
+arrancar (plantilla: [`.env.example`](./.env.example)). Formato: `CLAVE=VALOR`,
+sin comillas y sin `export`. Las líneas que empiezan con `#` se ignoran. Los
+flags del lanzador tienen prioridad sobre `.env`.
 
 | Variable | Uso | Obligatoria |
 |---|---|---|
-| `IDS_ML_V6` | `1` carga CatBoost v6 + detector de payload | No (el lanzador lab la fija en `1`) |
-| `IDS_ML_SOMBRA` | `1`: todo a `ml_candidatos`; `0`: clases activas | No (el lanzador lab la fija en `0`) |
-| `IDS_ML_ALERTAS` | `0`: el v5 queda en instrumentación | No |
-| `IDS_IPS_AUTONOMO` | `1`: bloqueo autónomo vía MikroTik; `0` (defecto): semi-autónomo | No |
-| `IDS_RUN_ID` | Etiqueta de la corrida (lab: `lab-v6-activo`) | No |
+| `IDS_ML_V6` | `1` carga CatBoost v6 + detector de payload | No (el lanzador prod la fija en `1`) |
+| `IDS_ML_SOMBRA` | `1`: todo a `ml_candidatos`; `0`: clases activas | No (el lanzador prod la fija en `0`) |
+| `IDS_ML_ALERTAS` | `0`: el v5 queda en instrumentación; el canal v6 corre igual | No |
+| `IDS_IPS_AUTONOMO` | `1`: bloqueo autónomo vía MikroTik; `0` (defecto): solo alerta | No |
+| `IDS_RUN_ID` | Etiqueta de la corrida (producción v6: `prod-v6-activo`) | No |
 | `IDS_AUTO_INICIAR` | `1`: arranca la captura al abrir la GUI | No |
 | `LOG_FOLDER` | Carpeta de logs (def. `D:\logs_ciberseguridad` si existe esa unidad; si no, `logs_ciberseguridad/`) | No |
 | `IDS_IFACE` | Nombre exacto de la NIC del SPAN; vacío = autodetección | No |
@@ -221,8 +244,14 @@ python CEREBRO_V5.py
 # Entrenar SQLiGuard (detector binario SQLi)
 python entrenar_sqli_guard.py
 
-# Batería de pruebas masivas (datasets sintéticos + trazabilidad)
+# Batería histórica v5 (NO se sobrescribe)
 python test_masivo.py
+
+# Producción v6 en ml-v6 (no lanza el sensor)
+scripts\lanzar_v6_produccion.bat
+
+# Preflight + batería T*v6 → informe_test_masivo_v6.json
+scripts\ejecutar_t_v6.bat
 
 # Pruebas unitarias del motor (paquetes sintéticos, sin red)
 .\venv\Scripts\python.exe -m pytest tests/ -v
@@ -290,14 +319,18 @@ flowchart TD
 ├── generador_dataset_global.py  # Pipeline de datos (CIC 2017+2018+2019) → v5
 ├── CEREBRO_V5.py                # Entrenamiento CatBoost v5
 ├── entrenar_sqli_guard.py       # Entrenamiento SQLiGuard
-├── test_masivo.py               # Batería de pruebas end-to-end
+├── test_masivo.py               # Batería histórica v5 (informe intacto)
+├── test_masivo_v6.py            # Batería v6 → informe_test_masivo_v6.json
 ├── tests/                       # Pruebas unitarias del motor (scapy sintético)
 ├── scripts/                     # Kit portable: instalar/actualizar/verificar Windows
 │   ├── instalar_windows.bat     #   Instalador de un clic (como Administrador)
 │   ├── actualizar_windows.bat   #   git pull + LFS + dependencias
 │   ├── verificar_windows.bat    #   Chequeo de salud (no inicia el sensor)
 │   ├── verificar_entorno.py     #   Comprobación Python de dependencias/modelos
-│   ├── lanzar_v6_lab.bat        #   Lanzador del laboratorio v6 (rutas relativas)
+│   ├── lanzar_v6_produccion.bat #   Lanzador de producción v6 en ml-v6
+│   ├── instalar_tarea_v6_produccion.bat # Registra IDS-Prod-V6-Activo (ONLOGON)
+│   ├── ejecutar_t_v6.bat        #   Preflight + T1v6..T4v6
+│   ├── lanzar_v6_lab.bat        #   Lanzador del laboratorio v6 (run aislado)
 │   └── instalar_tarea_v6_lab.bat#   Registra IDS-Lab-V6-Activo (ONLOGON)
 ├── evidencia/                   # Exportaciones, corpus anonimizado y hashes
 ├── requirements.txt             # Dependencias base (desarrollo)
@@ -305,9 +338,9 @@ flowchart TD
 ├── .env.example                 # Plantilla de configuración sin secretos
 ├── .gitattributes               # Git LFS para *.pkl
 ├── scripts/legacy/              # Scripts históricos v2/v3 (conservados como evidencia)
-├── Modelos_Entrenados/          # Artefactos v5 + SQLiGuard (Git LFS)
+├── Modelos_Entrenados/          # Artefactos v5 + v6 + SQLiGuard (Git LFS)
 ├── datasets/                    # Datasets crudos (ignorados en git)
-├── Dataset_Limpio/              # Dataset global v5 (ignorado)
+├── Dataset_Limpio/              # Dataset global v5 y v6 (ignorado; v6 se exige al correr T)
 ├── docs/                        # → Documentación (este proyecto)
 │   ├── academico/               # Tesis, anteproyecto e imágenes (docx/pdf/xlsx/tex)
 │   ├── adr/                     # Registros de decisiones (ADRs)

@@ -50,22 +50,35 @@ if not errorlevel 1 (
 
 echo.
 echo [4] Arranque automatico
-schtasks /query /tn "IDS-Lab-V6-Activo" >nul 2>&1
+set "TAREA_OK="
+schtasks /query /tn "IDS-Prod-V6-Activo" >nul 2>&1
 if not errorlevel 1 (
-    echo [OK] Tarea "IDS-Lab-V6-Activo" registrada.
+    echo [OK] Tarea "IDS-Prod-V6-Activo" registrada.
+    set "TAREA_OK=1"
 ) else (
-    echo [AVISO] Tarea "IDS-Lab-V6-Activo" NO registrada.
-    echo         Ejecute scripts\instalar_windows.bat como Administrador.
+    schtasks /query /tn "IDS-Lab-V6-Activo" >nul 2>&1
+    if not errorlevel 1 (
+        echo [OK] Tarea "IDS-Lab-V6-Activo" registrada - laboratorio.
+        set "TAREA_OK=1"
+    ) else (
+        echo [AVISO] No hay tarea de arranque registrada.
+        echo         Ejecute scripts\instalar_windows.bat como Administrador.
+    )
 )
 
 echo.
 echo [5] Log del run activo
-if exist "logs_ciberseguridad\gui_lab-v6-activo.log" (
-    echo [OK] Log presente. Ultimas 5 lineas:
-    powershell -NoProfile -Command "Get-Content -LiteralPath 'logs_ciberseguridad\gui_lab-v6-activo.log' -Tail 5"
+if exist "logs_ciberseguridad\gui_prod-v6-activo.log" (
+    echo [OK] Log de produccion v6 presente. Ultimas 5 lineas:
+    powershell -NoProfile -Command "Get-Content -LiteralPath 'logs_ciberseguridad\gui_prod-v6-activo.log' -Tail 5"
 ) else (
-    echo [INFO] Todavia no hay log del run. Es normal si aun no ha iniciado
-    echo         sesion desde la instalacion: el lanzador no se ejecuto ahora.
+    if exist "logs_ciberseguridad\gui_lab-v6-activo.log" (
+        echo [OK] Log del laboratorio v6 presente. Ultimas 5 lineas:
+        powershell -NoProfile -Command "Get-Content -LiteralPath 'logs_ciberseguridad\gui_lab-v6-activo.log' -Tail 5"
+    ) else (
+        echo [INFO] Todavia no hay log del run. Es normal si aun no ha iniciado
+        echo         sesion desde la instalacion: el lanzador no se ejecuto ahora.
+    )
 )
 
 echo.

@@ -10,6 +10,11 @@
 > Los tres nodos son CHR 7.23.7; atacante y víctima son clones del disco del
 > router (gold image), por lo que el montaje no requiere consola, ISO de sistema
 > ni internet.
+>
+> **T5v6 (repetición sobre ML v6): PREPARADA, NO EJECUTADA.** Las tres CHR están
+> apagadas/en otro dispositivo. Al ejecutarla se escribirá en
+> `corridas/v6/informe_t5_v6.json` sin tocar este `informe_t5.json`. Ver la
+> sección [Repetición sobre ML v6](#repetición-sobre-ml-v6-t5v6) más abajo.
 
 ## Propósito
 
@@ -31,7 +36,8 @@ deteccion D2 (ruta de produccion) -> bloqueo autonomo por SSH -> readback CONFIR
 | Provisionador de los 3 nodos CHR | [`_lab/provision_chr.ps1`](../../_lab/provision_chr.ps1) |
 | Configuración por SSH de cada nodo | [`_lab/chr_apply_config.py`](../../_lab/chr_apply_config.py) |
 | Verificación previa de la topología | [`_lab/verificar_lab.py`](../../_lab/verificar_lab.py) |
-| Script de la prueba T5 | [`_lab/t5_routeros_ips.py`](../../_lab/t5_routeros_ips.py) |
+| Script de la prueba T5 (v5, histórico) | [`_lab/t5_routeros_ips.py`](../../_lab/t5_routeros_ips.py) |
+| Script de la repetición T5v6 (preparada) | [`t5_routeros_v6.py`](./t5_routeros_v6.py) |
 | Perfil de nodos y parser de ping | [`_lab/nodos_lab.py`](../../_lab/nodos_lab.py) |
 | Esquema esperado del informe | [plantilla_informe_t5.json](./plantilla_informe_t5.json) |
 | Evidencias generadas por T5 | esta carpeta (`t5_*.txt`, `informe_t5.json`) |
@@ -222,6 +228,43 @@ T5 termina con `exit 0` solo si **los 9** pasan. Cada gate deja su evidencia aqu
 - [x] Resultados reales copiados en `docs/CHANGELOG.md` (entrada [18]) y en
       [`docs/tesis/informe_verificacion_codigo_datos.md`](../tesis/informe_verificacion_codigo_datos.md) §P2
 - [x] Sustituido el estado «PENDIENTE» de este README por los números obtenidos
+
+## Repetición sobre ML v6 (T5v6)
+
+La evidencia de arriba corresponde al motor **v5**. La repetición sobre el modelo
+**v6** usa el mismo laboratorio y los mismos nueve gates, pero cambia la
+detección: `docs/lab/t5_routeros_v6.py` importa `ids` con `IDS_ML_V6=1`,
+`IDS_ML_SOMBRA=0` y `IDS_ML_ALERTAS=0`, y alimenta `on_flow_ready` con **filas
+reales del dataset v6** (33 features), no con el D2 convertido a CIC de la T5
+histórica.
+
+**Estado: preparada, no ejecutada.** Requiere las tres CHR encendidas y
+`Dataset_Limpio\dataset_global_unipaz_v6.csv` ya presente; ese CSV **no se
+restaura ni se regenera** desde el script.
+
+```powershell
+setx MIKROTIK_PROFILE lab
+setx IDS_IPS_AUTONOMO 1
+.venv\Scripts\python.exe docs\lab\t5_routeros_v6.py --evidencia-dir docs\lab\corridas\v6
+```
+
+Por omisión escribe en `docs/lab/corridas/v6/`, de modo que los `t5_*.txt`, el
+`t5_v6_consola.txt` y `informe_t5_v6.json` **no pisan** los nueve archivos de la
+corrida histórica en la raíz de `docs/lab/`. Si se quiere otra corrida, basta con
+cambiar `--evidencia-dir`.
+
+Dos precisiones sobre el actuador:
+
+- `IDS_IPS_AUTONOMO=1` se usa **solo dentro del laboratorio**; la producción v6
+  en `ml-v6` mantiene el bloqueo MikroTik apagado.
+- La matriz versionada decide `alertar` para un SQLiML-solo, así que el script
+  inyecta **solo en memoria de ese proceso** un override de
+  `politica_bloqueo._cargar_config` que fuerza `Inyeccion_SQL` → `bloquear`
+  (1440 min). `config/politica_bloqueo.json` no se modifica y el override
+  desaparece al terminar el proceso.
+
+La matriz completa de evidencias v5/v6 está en
+[`docs/tesis/matriz_evidencias_v6.md`](../tesis/matriz_evidencias_v6.md).
 
 ## Notas
 

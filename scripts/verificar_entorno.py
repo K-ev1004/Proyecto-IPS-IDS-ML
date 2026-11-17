@@ -76,6 +76,11 @@ def verificar_archivos():
         ("interfasc.py", "GUI"),
         ("config/politica_bloqueo.json", "matriz de decision M4/M6"),
         ("requirements-windows.txt", "dependencias del kit Windows"),
+        ("scripts/lanzar_v6_produccion.bat", "lanzador de produccion v6"),
+        ("scripts/instalar_tarea_v6_produccion.bat", "tarea prod v6"),
+        ("scripts/ejecutar_t_v6.bat", "preflight + bateria T*v6"),
+        ("test_masivo_v6.py", "bateria v6 (informe separado)"),
+        ("docs/lab/t5_routeros_v6.py", "T5v6 (requiere CHR)"),
     ]:
         ruta = os.path.join(BASE_DIR, nombre)
         if os.path.isfile(ruta):
@@ -83,6 +88,15 @@ def verificar_archivos():
         else:
             print(f"[X] Falta {nombre} ({descripcion})")
             fallos += 1
+
+    dataset_v6 = os.path.join(BASE_DIR, 'Dataset_Limpio',
+                              'dataset_global_unipaz_v6.csv')
+    if os.path.isfile(dataset_v6):
+        print("[OK] dataset_global_unipaz_v6.csv presente "
+              "(lo exige la bateria T*v6).")
+    else:
+        print("[INFO] dataset_global_unipaz_v6.csv NO presente. "
+              "No se regenera: coloque el CSV antes de ejecutar las T.")
     return fallos
 
 
